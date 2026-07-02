@@ -17,6 +17,10 @@ public final class ClientSkinCache {
         return SKINS.get(pos.asLong());
     }
 
+    public static boolean isEmpty() {
+        return SKINS.isEmpty();
+    }
+
     public static void put(SkinData data) {
         SKINS.put(data.pos().asLong(), data);
     }

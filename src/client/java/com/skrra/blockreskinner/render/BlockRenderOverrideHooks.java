@@ -11,6 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class BlockRenderOverrideHooks {
     // Touched from chunk-build worker threads.
     private static final Set<Long> LOGGED_RENDER_OVERRIDES = ConcurrentHashMap.newKeySet();
+    private static final Set<Long> LOGGED_SODIUM_RENDER_OVERRIDES = ConcurrentHashMap.newKeySet();
 
     private BlockRenderOverrideHooks() {
     }
@@ -34,7 +35,23 @@ public final class BlockRenderOverrideHooks {
         }
     }
 
+    public static void logSodiumRenderOverride(BlockPos pos, BlockState realState, BlockState resolvedState) {
+        if (realState == resolvedState || realState.equals(resolvedState)) {
+            return;
+        }
+        long key = pos.asLong();
+        if (LOGGED_SODIUM_RENDER_OVERRIDES.add(key)) {
+            BlockReskinnerMod.LOGGER.info(
+                    "Sodium render override resolved: pos={} real={} visual={}",
+                    pos.toShortString(),
+                    realState,
+                    resolvedState
+            );
+        }
+    }
+
     public static void clearRenderLog(BlockPos pos) {
         LOGGED_RENDER_OVERRIDES.remove(pos.asLong());
+        LOGGED_SODIUM_RENDER_OVERRIDES.remove(pos.asLong());
     }
 }

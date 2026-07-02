@@ -11,6 +11,7 @@ import com.skrra.blockreskinner.skin.ConnectedSkinData;
 import com.skrra.blockreskinner.skin.SimpleSkinData;
 import com.skrra.blockreskinner.render.BlockPreviewGuiElementRenderer;
 import com.skrra.blockreskinner.render.BlockRenderOverrideHooks;
+import com.skrra.blockreskinner.render.ClientRenderRefresh;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -74,16 +75,7 @@ public class BlockReskinnerClient implements ClientModInitializer {
 
     private static void rerender(BlockPos pos) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client.world != null && client.worldRenderer != null) {
-            client.worldRenderer.scheduleBlockRenders(
-                    pos.getX() - 1,
-                    pos.getY() - 1,
-                    pos.getZ() - 1,
-                    pos.getX() + 1,
-                    pos.getY() + 1,
-                    pos.getZ() + 1
-            );
-        }
+        ClientRenderRefresh.requestBlockRenderUpdate(client, pos);
     }
 
     private static BlockState visualStateForLog(com.skrra.blockreskinner.skin.SkinData data) {

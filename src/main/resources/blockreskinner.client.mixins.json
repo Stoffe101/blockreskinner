@@ -1,9 +1,11 @@
 {
   "required": true,
   "package": "com.skrra.blockreskinner.mixin",
+  "plugin": "com.skrra.blockreskinner.mixin.BlockReskinnerMixinPlugin",
   "compatibilityLevel": "JAVA_21",
   "client": [
-    "ChunkRendererRegionMixin"
+    "ChunkRendererRegionMixin",
+    "SodiumLevelSliceMixin"
   ],
   "injectors": {
     "defaultRequire": 1
