@@ -3,19 +3,19 @@ package com.skrra.blockreskinner.screen;
 import com.skrra.blockreskinner.networking.payload.ApplySimpleSkinPayload;
 import com.skrra.blockreskinner.networking.payload.ClearSkinPayload;
 import com.skrra.blockreskinner.render.BlockPreviewGuiElementRenderState;
-import com.skrra.blockreskinner.screen.widget.BlockGridWidget;
-import com.skrra.blockreskinner.screen.widget.BlockSearchWidget;
-import com.skrra.blockreskinner.screen.widget.ModernScreenUtil;
+import com.skrra.blockreskinner.screen.layout.ReskinLayout;
+import com.skrra.blockreskinner.screen.layout.ReskinLayoutProfile;
+import com.skrra.blockreskinner.screen.widget.ModernButtonWidget;
+import com.skrra.blockreskinner.screen.widget.ModernUi;
 import com.skrra.blockreskinner.skin.SkinCategory;
 import com.skrra.blockreskinner.skin.SkinQueries;
 import com.skrra.blockreskinner.util.BlockStateUtil;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.block.BlockState;
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.input.CharInput;
 import net.minecraft.client.input.KeyInput;
 import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
@@ -28,24 +28,32 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+/**
+ * Block skin picker on an Atmosphere+-style virtual canvas: layout math runs
+ * against ReskinLayoutProfile's clamped-scale virtual size, rendering applies
+ * the profile's renderScale matrix, and every input handler divides mouse
+ * coordinates by the same renderScale.
+ */
 public class BlockSkinScreen extends Screen {
-    protected static final int PAD = 14;
-    protected static final int GAP = 8;
-    protected static final int HEADER_HEIGHT = 46;
-    protected static final int SEARCH_HEIGHT = 20;
-    protected static final int FOOTER_HEIGHT = 34;
-    protected static final int CATEGORY_ROW = 22;
-
     protected final BlockPos pos;
     protected final List<BlockState> allStates;
     protected final List<BlockState> filteredStates = new ArrayList<>();
-    protected BlockSearchWidget search;
-    protected ButtonWidget applyButton;
     protected BlockState selected;
     protected int scrollRows;
     protected int categoryScroll;
     protected FilterCategory activeCategory = FilterCategory.ALL;
+    protected String searchQuery = "";
+    protected boolean searchFocused;
+    protected Text searchPlaceholder = Text.translatable("screen.blockreskinner.search.placeholder");
+    protected Text headerTitle = Text.translatable("screen.blockreskinner.header");
+    protected Text headerSubtitle = Text.translatable("screen.blockreskinner.simple.description");
+
+    protected ReskinLayout layout;
+    private String layoutKey = "";
+    protected final List<ModernButtonWidget> footerButtons = new ArrayList<>();
+    protected ModernButtonWidget applyButton;
     private BlockState hoveredState;
+    private boolean hoveringSelectedId;
 
     public BlockSkinScreen(BlockPos pos) {
         this(pos, SkinQueries.simpleVisualStates(), Text.translatable("screen.blockreskinner.simple.title"));
@@ -61,25 +69,44 @@ public class BlockSkinScreen extends Screen {
 
     @Override
     protected void init() {
-        Layout layout = layout();
-        search = new BlockSearchWidget(textRenderer, layout.searchX(), layout.searchY(), layout.searchW(), SEARCH_HEIGHT);
-        search.setPlaceholder(Text.translatable("screen.blockreskinner.search.placeholder"));
-        search.setChangedListener(this::filter);
-        addDrawableChild(search);
+        layoutKey = "";
+        ensureLayout();
+    }
 
-        int buttonY = layout.footerY() + 7;
-        int buttonW = Math.min(110, (layout.contentW() - GAP * 2) / 3);
-        applyButton = ButtonWidget.builder(Text.translatable("screen.blockreskinner.apply"), button -> apply())
-                .dimensions(layout.contentX(), buttonY, buttonW, 20)
-                .build();
-        addDrawableChild(applyButton);
-        addDrawableChild(ButtonWidget.builder(Text.translatable("screen.blockreskinner.clear"), button -> clear())
-                .dimensions(layout.contentX() + buttonW + GAP, buttonY, buttonW, 20)
-                .build());
-        addDrawableChild(ButtonWidget.builder(Text.translatable("gui.cancel"), button -> close())
-                .dimensions(layout.contentRight() - buttonW, buttonY, buttonW, 20)
-                .build());
+    protected void ensureLayout() {
+        ReskinLayoutProfile profile = ReskinLayoutProfile.create(width, height);
+        if (!profile.key().equals(layoutKey)) {
+            layoutKey = profile.key();
+            layout = buildLayout(profile);
+            rebuildUi();
+            clampScroll();
+        }
+    }
+
+    protected ReskinLayout buildLayout(ReskinLayoutProfile profile) {
+        return ReskinLayout.forSimple(profile);
+    }
+
+    protected void rebuildUi() {
+        footerButtons.clear();
+        ReskinLayoutProfile profile = layout.profile;
+        int pad = profile.padding();
+        int buttonH = profile.buttonHeight();
+        int buttonW = Math.min(120, Math.max(90, (layout.window.w() - pad * 2 - 16) / 4));
+        int buttonY = layout.footer.y() + (layout.footer.h() - buttonH) / 2;
+        applyButton = new ModernButtonWidget(layout.window.x() + pad, buttonY, buttonW, buttonH,
+                Text.translatable("screen.blockreskinner.apply"), ModernButtonWidget.Style.PRIMARY, this::apply);
+        footerButtons.add(applyButton);
+        footerButtons.add(new ModernButtonWidget(layout.window.x() + pad + buttonW + 8, buttonY, buttonW, buttonH,
+                Text.translatable("screen.blockreskinner.clear"), ModernButtonWidget.Style.SECONDARY, this::clear));
+        footerButtons.add(new ModernButtonWidget(layout.window.right() - pad - buttonW, buttonY, buttonW, buttonH,
+                Text.translatable("gui.cancel"), ModernButtonWidget.Style.NEUTRAL, this::close));
         updateApplyButton();
+    }
+
+    protected void clampScroll() {
+        scrollRows = Math.max(0, Math.min(scrollRows, maxScrollRows()));
+        categoryScroll = Math.max(0, Math.min(categoryScroll, maxCategoryScroll()));
     }
 
     protected void apply() {
@@ -94,8 +121,8 @@ public class BlockSkinScreen extends Screen {
         close();
     }
 
-    protected void filter(String query) {
-        String needle = query.toLowerCase(Locale.ROOT).trim();
+    protected void refilter() {
+        String needle = searchQuery.toLowerCase(Locale.ROOT).trim();
         filteredStates.clear();
         for (BlockState state : allStates) {
             if (activeCategory.accepts(state) && matches(state, needle)) {
@@ -123,9 +150,9 @@ public class BlockSkinScreen extends Screen {
                 || axis.toLowerCase(Locale.ROOT).contains(needle);
     }
 
-    private void updateApplyButton() {
+    protected void updateApplyButton() {
         if (applyButton != null) {
-            applyButton.active = selected != null;
+            applyButton.setEnabled(selected != null);
         }
     }
 
@@ -136,327 +163,397 @@ public class BlockSkinScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float deltaTicks) {
+        ensureLayout();
         hoveredState = null;
-        Layout layout = layout();
-        renderChrome(context, layout);
-        renderCategories(context, layout, mouseX, mouseY);
-        renderGrid(context, layout, mouseX, mouseY);
-        renderSelectedPanel(context, layout);
+        hoveringSelectedId = false;
+
+        double renderScale = layout.profile.renderScale;
+        int uiMouseX = Math.round((float) (mouseX / renderScale));
+        int uiMouseY = Math.round((float) (mouseY / renderScale));
+
+        context.getMatrices().pushMatrix();
+        context.getMatrices().scale((float) renderScale);
+
+        renderChrome(context);
+        renderSidebar(context, uiMouseX, uiMouseY);
+        renderGrid(context, uiMouseX, uiMouseY);
+        renderDetailsPanel(context, uiMouseX, uiMouseY);
+        renderFooter(context, uiMouseX, uiMouseY);
+        renderTooltips(context, uiMouseX, uiMouseY);
+
+        context.getMatrices().popMatrix();
         super.render(context, mouseX, mouseY, deltaTicks);
-        renderHoveredTooltip(context, mouseX, mouseY);
     }
 
-    protected void renderChrome(DrawContext context, Layout layout) {
-        ModernScreenUtil.panel(context, layout.panelX(), layout.panelY(), layout.panelW(), layout.panelH());
-        context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.header"), layout.contentX(), layout.panelY() + 11, ModernScreenUtil.TEXT);
-        context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.simple.description"), layout.contentX(), layout.panelY() + 26, ModernScreenUtil.MUTED);
-        context.fill(layout.contentX(), layout.panelY() + HEADER_HEIGHT, layout.contentRight(), layout.panelY() + HEADER_HEIGHT + 1, 0x553A4555);
-        ModernScreenUtil.softCard(context, layout.searchX() - 1, layout.searchY() - 1, layout.searchW() + 2, SEARCH_HEIGHT + 2);
+    protected void renderChrome(DrawContext context) {
+        ReskinLayout.Rect window = layout.window;
+        ReskinLayoutProfile profile = layout.profile;
+        int pad = profile.padding();
+        ModernUi.window(context, window.x(), window.y(), window.w(), window.h());
+        ModernUi.headerBand(context, window.x() + 1, window.y() + 1, window.w() - 2, profile.headerHeight());
+        int titleY = window.y() + (profile.headerHeight() >= 44 ? 10 : 7);
+        context.drawTextWithShadow(textRenderer, headerTitle, window.x() + pad, titleY, ModernUi.TEXT_PRIMARY);
+        String subtitle = ModernUi.trim(textRenderer, headerSubtitle.getString(), window.w() - pad * 2);
+        context.drawTextWithShadow(textRenderer, Text.literal(subtitle), window.x() + pad, titleY + 13, ModernUi.TEXT_MUTED);
+        ModernUi.rule(context, window.x() + pad, window.y() + profile.headerHeight() - 1, window.w() - pad * 2, 90);
+
+        ReskinLayout.Rect search = layout.search;
+        ModernUi.searchBox(context, textRenderer, search.x(), search.y(), search.w(), search.h(),
+                searchQuery, searchPlaceholder, searchFocused);
     }
 
-    protected void renderCategories(DrawContext context, Layout layout, int mouseX, int mouseY) {
-        if (!layout.hasCategories()) {
+    protected void renderSidebar(DrawContext context, int mouseX, int mouseY) {
+        ReskinLayout.Rect sidebar = layout.sidebar;
+        if (sidebar == null) {
             return;
         }
-        ModernScreenUtil.card(context, layout.categoryX(), layout.contentY(), layout.categoryW(), layout.contentH());
-        context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.categories"), layout.categoryX() + 8, layout.contentY() + 8, ModernScreenUtil.MUTED);
+        ModernUi.panel(context, sidebar.x(), sidebar.y(), sidebar.w(), sidebar.h());
+        int headerX = sidebar.x() + 6;
+        int headerY = sidebar.y() + 5;
+        int headerW = sidebar.w() - 12;
+        int headerH = 18;
+        context.fill(headerX + 1, headerY + 1, headerX + headerW + 1, headerY + headerH + 1, 0x22000000);
+        context.fill(headerX, headerY, headerX + headerW, headerY + headerH, ModernUi.withAlpha(ModernUi.CARD_BACKGROUND, 0x88));
+        context.fill(headerX, headerY, headerX + headerW, headerY + 1, 0x22FFFFFF);
+        ModernUi.border(context, headerX, headerY, headerW, headerH, ModernUi.BORDER_SOFT);
+        ModernUi.gradientHorizontal(context, headerX + 1, headerY, Math.min(54, headerW - 2), 1, ModernUi.ACCENT, ModernUi.ACCENT_ALT);
+        context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.categories"),
+                headerX + 7, headerY + 5, ModernUi.TEXT_MUTED);
 
         FilterCategory[] categories = FilterCategory.values();
-        int visible = visibleCategoryRows(layout);
-        categoryScroll = Math.max(0, Math.min(categoryScroll, categories.length - visible));
-        int y = layout.contentY() + 24;
+        int rowH = layout.profile.categoryRowHeight();
+        int listTop = categoryListTop();
+        int visible = visibleCategoryRows();
+        categoryScroll = Math.max(0, Math.min(categoryScroll, maxCategoryScroll()));
+
+        context.enableScissor(sidebar.x() + 1, listTop, sidebar.right() - 1, listTop + visible * rowH);
         for (int i = categoryScroll; i < Math.min(categories.length, categoryScroll + visible); i++) {
             FilterCategory category = categories[i];
-            boolean hovered = mouseX >= layout.categoryX() + 6 && mouseX < layout.categoryX() + layout.categoryW() - 6
-                    && mouseY >= y && mouseY < y + 20;
+            int y = listTop + (i - categoryScroll) * rowH;
             boolean selectedCategory = activeCategory == category;
-            int fill = selectedCategory ? ModernScreenUtil.ACCENT_SOFT : hovered ? 0x332B3442 : 0;
-            if (fill != 0) {
-                context.fill(layout.categoryX() + 6, y, layout.categoryX() + layout.categoryW() - 6, y + 20, fill);
+            boolean hovered = ModernUi.hovered(mouseX, mouseY, sidebar.x() + 4, y, sidebar.w() - 8, rowH - 2);
+            if (selectedCategory) {
+                context.fill(sidebar.x() + 4, y, sidebar.right() - 4, y + rowH - 2, ModernUi.ACCENT_SOFT);
+                ModernUi.gradientVertical(context, sidebar.x() + 4, y, 2, rowH - 2, ModernUi.ACCENT, ModernUi.ACCENT_ALT);
+            } else if (hovered) {
+                context.fill(sidebar.x() + 4, y, sidebar.right() - 4, y + rowH - 2, ModernUi.withAlpha(ModernUi.CARD_HOVER_BACKGROUND, 0x66));
             }
-            int color = selectedCategory ? ModernScreenUtil.TEXT : ModernScreenUtil.MUTED;
-            String label = ModernScreenUtil.trim(textRenderer, Text.translatable(category.translationKey()).getString(), layout.categoryW() - 24);
-            context.drawTextWithShadow(textRenderer, Text.literal(label), layout.categoryX() + 11, y + 6, color);
-            y += CATEGORY_ROW;
+            int color = selectedCategory ? ModernUi.TEXT_PRIMARY : hovered ? ModernUi.TEXT_PRIMARY : ModernUi.TEXT_MUTED;
+            String label = ModernUi.trim(textRenderer, Text.translatable(category.translationKey()).getString(), sidebar.w() - 24);
+            context.drawTextWithShadow(textRenderer, Text.literal(label), sidebar.x() + 11, y + (rowH - 9) / 2, color);
         }
+        context.disableScissor();
 
-        if (categories.length > visible) {
-            int trackX = layout.categoryX() + layout.categoryW() - 4;
-            int trackY = layout.contentY() + 24;
-            int trackH = visible * CATEGORY_ROW - 2;
-            context.fill(trackX, trackY, trackX + 2, trackY + trackH, 0x33121722);
-            int barH = Math.max(10, trackH * visible / categories.length);
-            int barY = trackY + (trackH - barH) * categoryScroll / Math.max(1, categories.length - visible);
-            context.fill(trackX, barY, trackX + 2, barY + barH, 0x884E5F77);
-        }
+        ModernUi.scrollbar(context, sidebar.right() - 5, listTop, visible * rowH,
+                categories.length, visible, categoryScroll);
     }
 
-    protected int visibleCategoryRows(Layout layout) {
-        return Math.max(1, (layout.contentH() - 30) / CATEGORY_ROW);
-    }
+    protected void renderGrid(DrawContext context, int mouseX, int mouseY) {
+        ReskinLayout.Rect grid = layout.grid;
+        ModernUi.panel(context, grid.x(), grid.y(), grid.w(), grid.h());
+        int columns = layout.columns;
+        int size = layout.cardSize;
+        int gap = layout.cardGap;
+        int step = size + gap;
+        int gx = layout.gridInnerX();
+        int gy = layout.gridInnerY();
 
-    protected void renderGrid(DrawContext context, Layout layout, int mouseX, int mouseY) {
-        ModernScreenUtil.card(context, layout.gridX(), layout.contentY(), layout.gridW(), layout.contentH());
-        int tile = layout.tile();
-        int columns = BlockGridWidget.columns(layout.gridW() - 8, tile);
-        int gridX = layout.gridX() + 5;
-        int gridY = layout.contentY() + 5;
-        int gridW = columns * tile;
-        int gridH = layout.contentH() - 10;
-        context.enableScissor(gridX, gridY, gridX + Math.min(gridW, layout.gridW() - 10), gridY + gridH);
-
+        boolean mouseInGrid = grid.contains(mouseX, mouseY);
+        context.enableScissor(grid.x() + 1, grid.y() + 1, grid.right() - 1, grid.bottom() - 1);
         int start = scrollRows * columns;
-        int visibleRows = Math.max(1, gridH / tile + 1);
+        int visibleRows = layout.gridInnerHeight() / step + 2;
         int end = Math.min(filteredStates.size(), start + visibleRows * columns);
         for (int i = start; i < end; i++) {
             BlockState state = filteredStates.get(i);
             int local = i - start;
-            int x = gridX + (local % columns) * tile;
-            int y = gridY + (local / columns) * tile;
-            if (y > gridY + gridH) {
+            int x = gx + (local % columns) * step;
+            int y = gy + (local / columns) * step;
+            if (y > grid.bottom()) {
                 continue;
             }
-            boolean hovered = mouseX >= x && mouseX < x + tile - 4 && mouseY >= y && mouseY < y + tile - 4
-                    && mouseY >= gridY && mouseY < gridY + gridH;
+            boolean hovered = mouseInGrid && ModernUi.hovered(mouseX, mouseY, x, y, size, size);
             if (hovered) {
                 hoveredState = state;
             }
-            renderGridTile(context, state, x, y, tile - 4, hovered, state == selected);
+            renderCard(context, state, x, y, size, hovered, state == selected);
         }
-
         context.disableScissor();
+
+        int totalRows = (filteredStates.size() + columns - 1) / columns;
+        ModernUi.scrollbar(context, grid.right() - 5, grid.y() + 4, grid.h() - 8,
+                totalRows, layout.visibleGridRows(), scrollRows);
+
         if (filteredStates.isEmpty()) {
-            context.drawCenteredTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.no_results"), layout.gridX() + layout.gridW() / 2, layout.contentY() + layout.contentH() / 2 - 5, ModernScreenUtil.SUBTLE);
+            context.drawCenteredTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.no_results"),
+                    grid.x() + grid.w() / 2, grid.y() + grid.h() / 2 - 5, ModernUi.TEXT_MUTED);
         }
     }
 
-    protected void renderGridTile(DrawContext context, BlockState state, int x, int y, int size, boolean hovered, boolean selectedState) {
-        int border = selectedState ? ModernScreenUtil.ACCENT : hovered ? 0xFF93A4B8 : 0xFF2D3542;
-        int fill = selectedState ? 0xEE1D2D3D : hovered ? 0xEE242B36 : 0xDD171A22;
-        context.fill(x, y, x + size, y + size, border);
-        context.fill(x + 1, y + 1, x + size - 1, y + size - 1, fill);
+    protected void renderCard(DrawContext context, BlockState state, int x, int y, int size, boolean hovered, boolean selectedState) {
+        ModernUi.card(context, x, y, size, size, hovered, selectedState);
+        int preview = size - 20;
+        drawBlockPreview(context, state, x + (size - preview) / 2, y + 3, preview);
 
-        boolean showLabel = size >= 48;
-        int preview = size - (showLabel ? 18 : 8);
-        drawBlockPreview(context, state, x + (size - preview) / 2, y + 4, preview);
-
-        if (showLabel) {
-            SkinQueries.TextKey axisLabel = SkinQueries.axisLabelKey(state);
-            String label;
-            int color;
-            if (axisLabel != null) {
-                label = Text.translatable(axisLabel.labelKey()).getString();
-                color = ModernScreenUtil.WARN;
-            } else {
-                label = state.getBlock().getName().getString();
-                color = ModernScreenUtil.MUTED;
-            }
-            label = ModernScreenUtil.trim(textRenderer, label, size - 6);
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal(label), x + size / 2, y + size - 12, color);
+        SkinQueries.TextKey axisLabel = SkinQueries.axisLabelKey(state);
+        String label;
+        int color;
+        if (axisLabel != null) {
+            label = Text.translatable(axisLabel.labelKey()).getString();
+            color = ModernUi.WARNING;
+        } else {
+            label = state.getBlock().getName().getString();
+            color = selectedState ? ModernUi.TEXT_PRIMARY : ModernUi.TEXT_MUTED;
         }
+        label = ModernUi.trim(textRenderer, label, size - 8);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(label), x + size / 2, y + size - 12, color);
     }
 
     /**
-     * Queues a crisp 3D preview of the block state. Rendered offscreen at
-     * native window resolution by BlockPreviewGuiElementRenderer, so it stays
-     * sharp at any GUI scale.
+     * Queues a 3D block preview special element. Special GUI elements draw at
+     * raw screen coordinates (their pose ignores the virtual-canvas matrix), so
+     * virtual coordinates are converted to real ones here; the scissor rect on
+     * the stack is already stored transformed, i.e. in real coordinates.
      */
     protected void drawBlockPreview(DrawContext context, BlockState state, int x, int y, int size) {
+        double renderScale = layout.profile.renderScale;
+        int rx = (int) Math.round(x * renderScale);
+        int ry = (int) Math.round(y * renderScale);
+        int rsize = (int) Math.round(size * renderScale);
         context.state.addSpecialElement(new BlockPreviewGuiElementRenderState(
-                state, x, y, x + size, y + size, size, context.scissorStack.peekLast()));
+                state, rx, ry, rx + rsize, ry + rsize, rsize, context.scissorStack.peekLast()));
     }
 
-    protected void renderSelectedPanel(DrawContext context, Layout layout) {
-        int selectedH = layout.selectedH();
-        ModernScreenUtil.card(context, layout.contentX(), layout.selectedY(), layout.contentW(), selectedH);
-        context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.selected"), layout.contentX() + 10, layout.selectedY() + 7, ModernScreenUtil.MUTED);
+    protected void renderDetailsPanel(DrawContext context, int mouseX, int mouseY) {
+        ReskinLayout.Rect panel = layout.selected;
+        if (panel == null) {
+            return;
+        }
+        ModernUi.panel(context, panel.x(), panel.y(), panel.w(), panel.h());
+        int textX = panel.x() + 10;
+        int y = panel.y() + 6;
+        context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.selected"), textX, y, ModernUi.TEXT_MUTED);
         if (selected == null) {
-            context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.no_selection"), layout.contentX() + 10, layout.selectedY() + 21, ModernScreenUtil.SUBTLE);
+            context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.no_selection"), textX, y + 13, ModernUi.TEXT_DISABLED);
             return;
         }
 
-        int previewSize = selectedH - 16;
-        int previewX = layout.contentRight() - previewSize - 10;
-        drawBlockPreview(context, selected, previewX, layout.selectedY() + 8, previewSize);
+        int previewSize = Math.min(56, panel.h() - 14);
+        int previewX = panel.right() - previewSize - 8;
+        drawBlockPreview(context, selected, previewX, panel.y() + (panel.h() - previewSize) / 2, previewSize);
+        int textW = previewX - textX - 10;
 
-        int textW = layout.contentW() - previewSize - 34;
+        String name = ModernUi.trim(textRenderer, selected.getBlock().getName().getString(), textW);
+        context.drawTextWithShadow(textRenderer, Text.literal(name), textX, y + 12, ModernUi.TEXT_PRIMARY);
+
         SkinQueries.TextKey axisLabel = SkinQueries.axisLabelKey(selected);
-        String name = selected.getBlock().getName().getString();
-        int lineY = layout.selectedY() + 19;
-        context.drawTextWithShadow(textRenderer, Text.literal(ModernScreenUtil.trim(textRenderer, name, textW)), layout.contentX() + 10, lineY, ModernScreenUtil.TEXT);
-        lineY += 12;
         if (axisLabel != null) {
             String variant = Text.translatable(axisLabel.labelKey()).getString() + " (" + axisLabel.debugText() + ")";
-            context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.selected_variant", Text.literal(variant)), layout.contentX() + 10, lineY, ModernScreenUtil.WARN);
+            context.drawTextWithShadow(textRenderer,
+                    Text.translatable("screen.blockreskinner.selected_variant", Text.literal(variant)),
+                    textX, y + 24, ModernUi.WARNING);
         } else {
             Text category = Text.translatable(SkinQueries.category(selected).translationKey());
-            context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.selected_category", category), layout.contentX() + 10, lineY, ModernScreenUtil.MUTED);
+            context.drawTextWithShadow(textRenderer,
+                    Text.translatable("screen.blockreskinner.selected_category", category),
+                    textX, y + 24, ModernUi.TEXT_MUTED);
         }
-        lineY += 12;
-        String state = ModernScreenUtil.trim(textRenderer, BlockStateUtil.toString(selected), textW);
-        context.drawTextWithShadow(textRenderer, Text.literal(state), layout.contentX() + 10, lineY, ModernScreenUtil.SUBTLE);
+
+        String fullId = BlockStateUtil.toString(selected);
+        String shownId = ModernUi.trim(textRenderer, fullId, textW);
+        context.drawTextWithShadow(textRenderer, Text.literal(shownId), textX, y + 36, ModernUi.TEXT_DISABLED);
+        if (!shownId.equals(fullId) && ModernUi.hovered(mouseX, mouseY, textX, y + 34, textW, 12)) {
+            hoveringSelectedId = true;
+        }
     }
 
-    private void renderHoveredTooltip(DrawContext context, int mouseX, int mouseY) {
-        if (hoveredState == null) {
-            return;
+    protected void renderFooter(DrawContext context, int mouseX, int mouseY) {
+        ReskinLayout.Rect footer = layout.footer;
+        context.fill(footer.x(), footer.y(), footer.right(), footer.y() + 1, ModernUi.BORDER);
+        ModernUi.gradientHorizontal(context, footer.x(), footer.y(), Math.min(footer.w(), 90), 1, ModernUi.ACCENT, ModernUi.ACCENT_ALT);
+        for (ModernButtonWidget button : footerButtons) {
+            button.render(context, textRenderer, mouseX, mouseY);
         }
-        List<Text> lines = new ArrayList<>();
-        lines.add(hoveredState.getBlock().getName());
-        lines.add(Text.literal(Registries.BLOCK.getId(hoveredState.getBlock()).toString()).formatted(Formatting.GRAY));
-        SkinQueries.TextKey axisLabel = SkinQueries.axisLabelKey(hoveredState);
-        if (axisLabel != null) {
-            lines.add(Text.translatable("screen.blockreskinner.tooltip.variant", Text.translatable(axisLabel.labelKey())).formatted(Formatting.YELLOW));
-            lines.add(Text.literal(axisLabel.debugText()).formatted(Formatting.GRAY));
+    }
+
+    protected void renderTooltips(DrawContext context, int mouseX, int mouseY) {
+        if (hoveredState != null) {
+            List<Text> lines = new ArrayList<>();
+            lines.add(hoveredState.getBlock().getName());
+            lines.add(Text.literal(Registries.BLOCK.getId(hoveredState.getBlock()).toString()).formatted(Formatting.GRAY));
+            SkinQueries.TextKey axisLabel = SkinQueries.axisLabelKey(hoveredState);
+            if (axisLabel != null) {
+                lines.add(Text.translatable("screen.blockreskinner.tooltip.variant", Text.translatable(axisLabel.labelKey())).formatted(Formatting.YELLOW));
+                lines.add(Text.literal(axisLabel.debugText()).formatted(Formatting.GRAY));
+            }
+            lines.add(Text.translatable(SkinQueries.category(hoveredState).translationKey()).formatted(Formatting.DARK_AQUA));
+            ModernUi.tooltip(context, textRenderer, lines, mouseX, mouseY, layout.profile.virtualWidth, layout.profile.virtualHeight);
+        } else if (hoveringSelectedId && selected != null) {
+            ModernUi.tooltip(context, textRenderer, List.of(Text.literal(BlockStateUtil.toString(selected))),
+                    mouseX, mouseY, layout.profile.virtualWidth, layout.profile.virtualHeight);
         }
-        lines.add(Text.translatable(SkinQueries.category(hoveredState).translationKey()).formatted(Formatting.DARK_AQUA));
-        context.drawTooltip(textRenderer, lines, mouseX, mouseY);
     }
 
     @Override
     public boolean mouseClicked(Click click, boolean doubled) {
-        if (super.mouseClicked(click, doubled)) {
+        ensureLayout();
+        double renderScale = layout.profile.renderScale;
+        double vx = click.x() / renderScale;
+        double vy = click.y() / renderScale;
+        if (handleVirtualClick(vx, vy)) {
             return true;
         }
-        if (search != null && !search.isMouseOver(click.x(), click.y())) {
-            search.setFocused(false);
+        return super.mouseClicked(click, doubled);
+    }
+
+    protected boolean handleVirtualClick(double vx, double vy) {
+        for (ModernButtonWidget button : footerButtons) {
+            if (button.mouseClicked(vx, vy)) {
+                return true;
+            }
         }
-        FilterCategory category = categoryAt(click.x(), click.y());
+        if (handleExtraClick(vx, vy)) {
+            return true;
+        }
+        ReskinLayout.Rect search = layout.search;
+        if (search.contains(vx, vy)) {
+            if (ModernUi.overSearchClear(vx, vy, search.x(), search.y(), search.w(), search.h(), searchQuery)) {
+                searchQuery = "";
+                refilter();
+            }
+            searchFocused = true;
+            return true;
+        }
+        searchFocused = false;
+
+        FilterCategory category = categoryAt(vx, vy);
         if (category != null) {
             activeCategory = category;
-            filter(search == null ? "" : search.getText());
+            refilter();
             return true;
         }
-        BlockState clicked = stateAt(click.x(), click.y());
+        BlockState clicked = stateAt(vx, vy);
         if (clicked != null) {
             selected = clicked;
             updateApplyButton();
             return true;
         }
+        return layout.window.contains(vx, vy);
+    }
+
+    /** Subclass hook for additional virtual-coordinate click targets. */
+    protected boolean handleExtraClick(double vx, double vy) {
         return false;
     }
 
-    @Override
-    public boolean keyPressed(KeyInput input) {
-        if (input.key() == GLFW.GLFW_KEY_ESCAPE && search != null && search.isFocused()) {
-            search.setFocused(false);
-            return true;
+    protected BlockState stateAt(double vx, double vy) {
+        ReskinLayout.Rect grid = layout.grid;
+        if (!grid.contains(vx, vy)) {
+            return null;
         }
-        return super.keyPressed(input);
+        int step = layout.cardSize + layout.cardGap;
+        int col = ((int) vx - layout.gridInnerX()) / step;
+        int row = ((int) vy - layout.gridInnerY()) / step;
+        if (col < 0 || col >= layout.columns || row < 0) {
+            return null;
+        }
+        int inCol = ((int) vx - layout.gridInnerX()) % step;
+        int inRow = ((int) vy - layout.gridInnerY()) % step;
+        if (inCol >= layout.cardSize || inRow >= layout.cardSize) {
+            return null;
+        }
+        int index = (scrollRows + row) * layout.columns + col;
+        return index >= 0 && index < filteredStates.size() ? filteredStates.get(index) : null;
+    }
+
+    protected FilterCategory categoryAt(double vx, double vy) {
+        ReskinLayout.Rect sidebar = layout.sidebar;
+        if (sidebar == null || !sidebar.contains(vx, vy)) {
+            return null;
+        }
+        FilterCategory[] categories = FilterCategory.values();
+        int rowH = layout.profile.categoryRowHeight();
+        int listTop = categoryListTop();
+        int visible = visibleCategoryRows();
+        for (int i = categoryScroll; i < Math.min(categories.length, categoryScroll + visible); i++) {
+            int y = listTop + (i - categoryScroll) * rowH;
+            if (ModernUi.hovered(vx, vy, sidebar.x() + 4, y, sidebar.w() - 8, rowH - 2)) {
+                return categories[i];
+            }
+        }
+        return null;
+    }
+
+    protected int categoryListTop() {
+        return layout.sidebar.y() + 29;
+    }
+
+    protected int visibleCategoryRows() {
+        return Math.max(1, (layout.sidebar.bottom() - 4 - categoryListTop()) / layout.profile.categoryRowHeight());
+    }
+
+    protected int maxCategoryScroll() {
+        if (layout == null || layout.sidebar == null) {
+            return 0;
+        }
+        return Math.max(0, FilterCategory.values().length - visibleCategoryRows());
+    }
+
+    protected int maxScrollRows() {
+        if (layout == null) {
+            return 0;
+        }
+        int totalRows = (filteredStates.size() + layout.columns - 1) / layout.columns;
+        return Math.max(0, totalRows - layout.visibleGridRows());
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        Layout layout = layout();
-        if (layout.hasCategories() && mouseX >= layout.categoryX() && mouseX < layout.categoryX() + layout.categoryW()
-                && mouseY >= layout.contentY() && mouseY <= layout.contentY() + layout.contentH()) {
-            int visible = visibleCategoryRows(layout);
-            int max = Math.max(0, FilterCategory.values().length - visible);
-            categoryScroll = Math.max(0, Math.min(max, categoryScroll - (int) Math.signum(verticalAmount)));
+        ensureLayout();
+        double renderScale = layout.profile.renderScale;
+        double vx = mouseX / renderScale;
+        double vy = mouseY / renderScale;
+        if (layout.sidebar != null && layout.sidebar.contains(vx, vy)) {
+            categoryScroll = Math.max(0, Math.min(maxCategoryScroll(), categoryScroll - (int) Math.signum(verticalAmount)));
             return true;
         }
-        if (mouseX >= layout.gridX() && mouseX <= layout.gridX() + layout.gridW() && mouseY >= layout.contentY() && mouseY <= layout.contentY() + layout.contentH()) {
-            int columns = BlockGridWidget.columns(layout.gridW() - 8, layout.tile());
-            int visibleRows = Math.max(1, (layout.contentH() - 10) / layout.tile());
-            int rows = Math.max(0, (filteredStates.size() + columns - 1) / columns - visibleRows);
-            scrollRows = Math.max(0, Math.min(rows, scrollRows - (int) Math.signum(verticalAmount)));
+        if (layout.grid.contains(vx, vy)) {
+            scrollRows = Math.max(0, Math.min(maxScrollRows(), scrollRows - (int) Math.signum(verticalAmount)));
             return true;
         }
         return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
     }
 
-    protected BlockState stateAt(double mouseX, double mouseY) {
-        Layout layout = layout();
-        int tile = layout.tile();
-        int gridX = layout.gridX() + 5;
-        int gridY = layout.contentY() + 5;
-        if (mouseX < gridX || mouseX >= layout.gridX() + layout.gridW() - 5 || mouseY < gridY || mouseY >= layout.contentY() + layout.contentH() - 5) {
-            return null;
-        }
-        int columns = BlockGridWidget.columns(layout.gridW() - 8, tile);
-        int col = ((int) mouseX - gridX) / tile;
-        int row = ((int) mouseY - gridY) / tile;
-        if (col >= columns) {
-            return null;
-        }
-        int index = (scrollRows + row) * columns + col;
-        return index >= 0 && index < filteredStates.size() ? filteredStates.get(index) : null;
-    }
-
-    private FilterCategory categoryAt(double mouseX, double mouseY) {
-        Layout layout = layout();
-        if (!layout.hasCategories()) {
-            return null;
-        }
-        FilterCategory[] categories = FilterCategory.values();
-        int visible = visibleCategoryRows(layout);
-        int y = layout.contentY() + 24;
-        for (int i = categoryScroll; i < Math.min(categories.length, categoryScroll + visible); i++) {
-            if (mouseX >= layout.categoryX() + 6 && mouseX < layout.categoryX() + layout.categoryW() - 6 && mouseY >= y && mouseY < y + 20) {
-                return categories[i];
+    @Override
+    public boolean keyPressed(KeyInput input) {
+        if (searchFocused) {
+            if (input.key() == GLFW.GLFW_KEY_ESCAPE) {
+                searchFocused = false;
+                return true;
             }
-            y += CATEGORY_ROW;
+            if (input.key() == GLFW.GLFW_KEY_BACKSPACE) {
+                if (!searchQuery.isEmpty()) {
+                    searchQuery = searchQuery.substring(0, searchQuery.length() - 1);
+                    refilter();
+                }
+                return true;
+            }
         }
-        return null;
+        return super.keyPressed(input);
     }
 
-    protected Layout layout() {
-        int panelW = Math.min(Math.max(560, width - 24), 1040);
-        if (width < 584) {
-            panelW = Math.max(300, width - 12);
+    @Override
+    public boolean charTyped(CharInput input) {
+        if (searchFocused && input.isValidChar() && searchQuery.length() < 48) {
+            searchQuery += input.asString();
+            refilter();
+            return true;
         }
-        int panelH = Math.min(Math.max(320, height - 24), 620);
-        if (height < 344) {
-            panelH = Math.max(260, height - 12);
-        }
-        int panelX = (width - panelW) / 2;
-        int panelY = (height - panelH) / 2;
-        int contentX = panelX + PAD;
-        int contentW = panelW - PAD * 2;
-        int searchY = panelY + HEADER_HEIGHT + GAP;
-        int selectedH = panelH < 420 ? 56 : 70;
-        int selectedY = panelY + panelH - FOOTER_HEIGHT - GAP - selectedH;
-        int contentY = searchY + SEARCH_HEIGHT + GAP;
-        int contentH = Math.max(72, selectedY - GAP - contentY);
-        boolean hasCategories = panelW >= 560;
-        int categoryW = hasCategories ? Math.min(132, Math.max(112, panelW / 7)) : 0;
-        int gridX = hasCategories ? contentX + categoryW + GAP : contentX;
-        int gridW = contentX + contentW - gridX;
-        int tile = panelH < 390 ? BlockGridWidget.MIN_TILE : BlockGridWidget.PREFERRED_TILE;
-        return new Layout(panelX, panelY, panelW, panelH, contentX, contentW, searchY, contentY, contentH, selectedY, selectedH, categoryW, gridX, gridW, tile, hasCategories);
-    }
-
-    protected MinecraftClient clientOrNull() {
-        return MinecraftClient.getInstance();
+        return super.charTyped(input);
     }
 
     @Override
     public boolean shouldPause() {
         return false;
-    }
-
-    protected record Layout(int panelX, int panelY, int panelW, int panelH, int contentX, int contentW, int searchY,
-                            int contentY, int contentH, int selectedY, int selectedH, int categoryW, int gridX,
-                            int gridW, int tile, boolean hasCategories) {
-        int contentRight() {
-            return contentX + contentW;
-        }
-
-        int searchX() {
-            return contentX;
-        }
-
-        int searchW() {
-            return contentW;
-        }
-
-        int categoryX() {
-            return contentX;
-        }
-
-        int footerY() {
-            return panelY + panelH - FOOTER_HEIGHT;
-        }
     }
 
     protected enum FilterCategory {
@@ -465,7 +562,6 @@ public class BlockSkinScreen extends Screen {
         LOGS_AND_PILLARS("screen.blockreskinner.category.logs_and_pillars"),
         TRANSPARENT("screen.blockreskinner.category.transparent"),
         LEAVES("screen.blockreskinner.category.leaves"),
-        CUTOUT("screen.blockreskinner.category.cutout"),
         ORES("screen.blockreskinner.category.ores"),
         STONE_BRICKS("screen.blockreskinner.category.stone_bricks"),
         WOOD("screen.blockreskinner.category.wood"),
@@ -493,7 +589,6 @@ public class BlockSkinScreen extends Screen {
                 case LOGS_AND_PILLARS -> category == SkinCategory.LOGS_AND_PILLARS;
                 case TRANSPARENT -> category == SkinCategory.TRANSPARENT;
                 case LEAVES -> category == SkinCategory.LEAVES;
-                case CUTOUT -> category == SkinCategory.CUTOUT;
                 case ORES -> path.endsWith("_ore") || path.equals("ancient_debris")
                         || (path.startsWith("raw_") && path.endsWith("_block"));
                 case STONE_BRICKS -> !path.endsWith("_ore")

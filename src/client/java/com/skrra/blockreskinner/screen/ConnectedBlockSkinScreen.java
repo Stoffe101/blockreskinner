@@ -1,8 +1,11 @@
 package com.skrra.blockreskinner.screen;
 
 import com.skrra.blockreskinner.networking.payload.ApplyConnectedSkinPayload;
+import com.skrra.blockreskinner.screen.layout.ReskinLayout;
+import com.skrra.blockreskinner.screen.layout.ReskinLayoutProfile;
 import com.skrra.blockreskinner.screen.widget.ConnectionEditorWidget;
-import com.skrra.blockreskinner.screen.widget.ModernScreenUtil;
+import com.skrra.blockreskinner.screen.widget.ModernButtonWidget;
+import com.skrra.blockreskinner.screen.widget.ModernUi;
 import com.skrra.blockreskinner.skin.ConnectionOverride;
 import com.skrra.blockreskinner.skin.SkinQueries;
 import com.skrra.blockreskinner.util.BlockStateUtil;
@@ -10,30 +13,35 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.block.BlockState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.text.OrderedText;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
 
+import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Connected block (fence/wall/pane) skin picker. Shares the virtual-canvas
+ * chrome with BlockSkinScreen; the category sidebar is replaced by a
+ * right-side details panel holding the selected material and the four
+ * visual-connection override rows.
+ */
 public class ConnectedBlockSkinScreen extends BlockSkinScreen {
     private static final int ROW_PITCH = 26;
+    private static final int ROW_HEIGHT = 24;
 
-    private final boolean northConnected;
-    private final boolean eastConnected;
-    private final boolean southConnected;
-    private final boolean westConnected;
-    private ConnectionOverride north = ConnectionOverride.AUTO;
-    private ConnectionOverride east = ConnectionOverride.AUTO;
-    private ConnectionOverride south = ConnectionOverride.AUTO;
-    private ConnectionOverride west = ConnectionOverride.AUTO;
+    private final boolean[] currentConnections;
+    private final ConnectionOverride[] overrides = {
+            ConnectionOverride.AUTO, ConnectionOverride.AUTO, ConnectionOverride.AUTO, ConnectionOverride.AUTO
+    };
+    private final List<ModernButtonWidget> overrideButtons = new ArrayList<>(4);
 
     public ConnectedBlockSkinScreen(BlockPos pos, boolean northConnected, boolean eastConnected, boolean southConnected, boolean westConnected) {
         super(pos, connectedStates(pos), Text.translatable("screen.blockreskinner.connected.title"));
-        this.northConnected = northConnected;
-        this.eastConnected = eastConnected;
-        this.southConnected = southConnected;
-        this.westConnected = westConnected;
+        this.currentConnections = new boolean[]{northConnected, eastConnected, southConnected, westConnected};
+        this.searchPlaceholder = Text.translatable("screen.blockreskinner.search.materials");
+        this.headerTitle = Text.translatable("screen.blockreskinner.connected.title");
+        this.headerSubtitle = Text.translatable("screen.blockreskinner.connected.subtitle");
     }
 
     private static List<BlockState> connectedStates(BlockPos pos) {
@@ -45,153 +53,139 @@ public class ConnectedBlockSkinScreen extends BlockSkinScreen {
     }
 
     @Override
-    protected void init() {
-        super.init();
-        if (search != null) {
-            search.setPlaceholder(Text.translatable("screen.blockreskinner.search.materials"));
+    protected ReskinLayout buildLayout(ReskinLayoutProfile profile) {
+        return ReskinLayout.forConnected(profile);
+    }
+
+    @Override
+    protected void rebuildUi() {
+        super.rebuildUi();
+        overrideButtons.clear();
+        ReskinLayout.Rect panel = layout.sidePanel;
+        int buttonW = overrideButtonWidth();
+        int buttonX = panel.right() - 10 - buttonW;
+        int top = rowsTop();
+        for (int i = 0; i < 4; i++) {
+            int index = i;
+            int buttonY = top + i * ROW_PITCH + (ROW_HEIGHT - 20) / 2;
+            ModernButtonWidget[] holder = new ModernButtonWidget[1];
+            holder[0] = new ModernButtonWidget(buttonX, buttonY, buttonW, 20,
+                    overrideText(overrides[index]), ModernButtonWidget.Style.SECONDARY, () -> {
+                        overrides[index] = ConnectionEditorWidget.next(overrides[index]);
+                        holder[0].setLabel(overrideText(overrides[index]));
+                    });
+            ModernButtonWidget button = holder[0];
+            overrideButtons.add(button);
         }
-        Layout layout = layout();
-        int w = overrideButtonWidth(layout);
-        int x = layout.contentRight() - w - 10;
-        int y = connectionStartY(layout);
-        addDrawableChild(directionButton(x, y, w, () -> north, value -> north = value));
-        addDrawableChild(directionButton(x, y + ROW_PITCH, w, () -> east, value -> east = value));
-        addDrawableChild(directionButton(x, y + ROW_PITCH * 2, w, () -> south, value -> south = value));
-        addDrawableChild(directionButton(x, y + ROW_PITCH * 3, w, () -> west, value -> west = value));
-    }
-
-    private ButtonWidget directionButton(int x, int y, int width, java.util.function.Supplier<ConnectionOverride> getter, java.util.function.Consumer<ConnectionOverride> setter) {
-        return ButtonWidget.builder(valueText(getter.get()), button -> {
-                    ConnectionOverride next = ConnectionEditorWidget.next(getter.get());
-                    setter.accept(next);
-                    button.setMessage(valueText(next));
-                })
-                .dimensions(x, y, width, 20)
-                .build();
-    }
-
-    private Text valueText(ConnectionOverride value) {
-        return switch (value) {
-            case AUTO -> Text.translatable("screen.blockreskinner.connected.override.auto");
-            case FORCE_ON -> Text.translatable("screen.blockreskinner.connected.override.connected");
-            case FORCE_OFF -> Text.translatable("screen.blockreskinner.connected.override.disconnected");
-        };
     }
 
     @Override
     protected void apply() {
         if (selected != null) {
-            ClientPlayNetworking.send(new ApplyConnectedSkinPayload(pos, BlockStateUtil.toString(selected), north, east, south, west));
+            ClientPlayNetworking.send(new ApplyConnectedSkinPayload(pos, BlockStateUtil.toString(selected),
+                    overrides[0], overrides[1], overrides[2], overrides[3]));
             close();
         }
     }
 
     @Override
-    protected void renderChrome(DrawContext context, Layout layout) {
-        ModernScreenUtil.panel(context, layout.panelX(), layout.panelY(), layout.panelW(), layout.panelH());
-        context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.connected.title"), layout.contentX(), layout.panelY() + 11, ModernScreenUtil.TEXT);
-        context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.connected.subtitle"), layout.contentX(), layout.panelY() + 26, ModernScreenUtil.MUTED);
-        context.fill(layout.contentX(), layout.panelY() + HEADER_HEIGHT, layout.contentRight(), layout.panelY() + HEADER_HEIGHT + 1, 0x553A4555);
-        ModernScreenUtil.softCard(context, layout.searchX() - 1, layout.searchY() - 1, layout.searchW() + 2, SEARCH_HEIGHT + 2);
-    }
-
-    @Override
-    protected void renderCategories(DrawContext context, Layout layout, int mouseX, int mouseY) {
-    }
-
-    @Override
-    protected void renderSelectedPanel(DrawContext context, Layout layout) {
-        int sideX = sideX(layout);
-        int sideW = sideW(layout);
-        ModernScreenUtil.card(context, sideX, layout.contentY(), sideW, layout.contentH());
-        context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.connected.material"), sideX + 10, layout.contentY() + 8, ModernScreenUtil.MUTED);
+    protected void renderDetailsPanel(DrawContext context, int mouseX, int mouseY) {
+        ReskinLayout.Rect panel = layout.sidePanel;
+        ModernUi.panel(context, panel.x(), panel.y(), panel.w(), panel.h());
+        int textX = panel.x() + 10;
+        context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.connected.material"),
+                textX, panel.y() + 8, ModernUi.TEXT_MUTED);
 
         if (selected != null) {
-            drawBlockPreview(context, selected, sideX + 10, layout.contentY() + 20, 36);
-            context.drawTextWithShadow(textRenderer, Text.literal(ModernScreenUtil.trim(textRenderer, selected.getBlock().getName().getString(), sideW - 66)), sideX + 54, layout.contentY() + 25, ModernScreenUtil.TEXT);
-            context.drawTextWithShadow(textRenderer, Text.literal(ModernScreenUtil.trim(textRenderer, BlockStateUtil.toString(selected), sideW - 66)), sideX + 54, layout.contentY() + 38, ModernScreenUtil.SUBTLE);
+            drawBlockPreview(context, selected, textX, panel.y() + 20, 36);
+            int infoX = textX + 44;
+            int infoW = panel.right() - 10 - infoX;
+            context.drawTextWithShadow(textRenderer,
+                    Text.literal(ModernUi.trim(textRenderer, selected.getBlock().getName().getString(), infoW)),
+                    infoX, panel.y() + 25, ModernUi.TEXT_PRIMARY);
+            context.drawTextWithShadow(textRenderer,
+                    Text.literal(ModernUi.trim(textRenderer, BlockStateUtil.toString(selected), infoW)),
+                    infoX, panel.y() + 38, ModernUi.TEXT_DISABLED);
         } else {
-            context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.no_selection"), sideX + 10, layout.contentY() + 25, ModernScreenUtil.SUBTLE);
+            context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.no_selection"),
+                    textX, panel.y() + 25, ModernUi.TEXT_DISABLED);
         }
 
-        int headerY = controlsHeaderY(layout);
-        context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.connection_controls"), sideX + 10, headerY, ModernScreenUtil.TEXT);
-        context.drawWrappedTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.connected.description"), sideX + 10, headerY + 12, sideW - 20, ModernScreenUtil.MUTED);
+        int ruleY = panel.y() + 62;
+        ModernUi.rule(context, textX, ruleY, panel.w() - 20, 48);
+        context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.connection_controls"),
+                textX, ruleY + 8, ModernUi.TEXT_PRIMARY);
 
-        int rowY = connectionStartY(layout);
-        renderConnectionRow(context, layout, rowY, Text.translatable("screen.blockreskinner.direction.north"), northConnected);
-        renderConnectionRow(context, layout, rowY + ROW_PITCH, Text.translatable("screen.blockreskinner.direction.east"), eastConnected);
-        renderConnectionRow(context, layout, rowY + ROW_PITCH * 2, Text.translatable("screen.blockreskinner.direction.south"), southConnected);
-        renderConnectionRow(context, layout, rowY + ROW_PITCH * 3, Text.translatable("screen.blockreskinner.direction.west"), westConnected);
-    }
+        int descY = ruleY + 20;
+        for (OrderedText line : descriptionLines()) {
+            context.drawText(textRenderer, line, textX, descY, ModernUi.TEXT_MUTED, true);
+            descY += 9;
+        }
 
-    private void renderConnectionRow(DrawContext context, Layout layout, int y, Text direction, boolean connected) {
-        int sideX = sideX(layout);
-        int sideW = sideW(layout);
-        int buttonW = overrideButtonWidth(layout);
-        int x = sideX + 10;
-        int rowW = sideW - 20;
-        context.fill(x, y - 2, x + rowW, y + 22, 0x661D2230);
-        context.drawTextWithShadow(textRenderer, direction, x + 6, y + 6, ModernScreenUtil.TEXT);
+        int top = rowsTop();
+        Text[] directions = {
+                Text.translatable("screen.blockreskinner.direction.north"),
+                Text.translatable("screen.blockreskinner.direction.east"),
+                Text.translatable("screen.blockreskinner.direction.south"),
+                Text.translatable("screen.blockreskinner.direction.west")
+        };
+        int buttonW = overrideButtonWidth();
+        for (int i = 0; i < 4; i++) {
+            int rowY = top + i * ROW_PITCH;
+            int rowW = panel.w() - 20;
+            // alternating subtle row backgrounds
+            context.fill(textX, rowY, textX + rowW, rowY + ROW_HEIGHT,
+                    i % 2 == 0 ? ModernUi.withAlpha(ModernUi.CARD_BACKGROUND, 0x66) : ModernUi.withAlpha(ModernUi.CARD_BACKGROUND, 0x3A));
+            context.drawTextWithShadow(textRenderer, directions[i], textX + 6, rowY + (ROW_HEIGHT - 8) / 2, ModernUi.TEXT_PRIMARY);
 
-        int statusX = x + 46;
-        int statusW = rowW - buttonW - 54;
-        Text status = connected
-                ? Text.translatable("screen.blockreskinner.connected.current.connected.short")
-                : Text.translatable("screen.blockreskinner.connected.current.disconnected.short");
-        int color = connected ? ModernScreenUtil.GOOD : ModernScreenUtil.SUBTLE;
-        String trimmed = ModernScreenUtil.trim(textRenderer, status.getString(), Math.max(30, statusW));
-        context.drawTextWithShadow(textRenderer, Text.literal(trimmed), statusX, y + 6, color);
+            boolean connected = currentConnections[i];
+            Text status = connected
+                    ? Text.translatable("screen.blockreskinner.connected.current.connected.short")
+                    : Text.translatable("screen.blockreskinner.connected.current.disconnected.short");
+            int statusColor = connected ? ModernUi.SUCCESS : ModernUi.TEXT_MUTED;
+            int statusX = textX + 46;
+            int statusW = rowW - buttonW - 58;
+            context.drawTextWithShadow(textRenderer,
+                    Text.literal(ModernUi.trim(textRenderer, status.getString(), Math.max(30, statusW))),
+                    statusX, rowY + (ROW_HEIGHT - 8) / 2, statusColor);
+        }
+
+        for (ModernButtonWidget button : overrideButtons) {
+            button.render(context, textRenderer, mouseX, mouseY);
+        }
     }
 
     @Override
-    protected Layout layout() {
-        int panelW = Math.min(Math.max(560, width - 24), 1040);
-        if (width < 584) {
-            panelW = Math.max(300, width - 12);
+    protected boolean handleExtraClick(double vx, double vy) {
+        for (ModernButtonWidget button : overrideButtons) {
+            if (button.mouseClicked(vx, vy)) {
+                return true;
+            }
         }
-        int panelH = Math.min(Math.max(320, height - 24), 620);
-        if (height < 344) {
-            panelH = Math.max(260, height - 12);
-        }
-        int panelX = (width - panelW) / 2;
-        int panelY = (height - panelH) / 2;
-        int contentX = panelX + PAD;
-        int contentW = panelW - PAD * 2;
-        int searchY = panelY + HEADER_HEIGHT + GAP;
-        int footerY = panelY + panelH - FOOTER_HEIGHT;
-        int contentY = searchY + SEARCH_HEIGHT + GAP;
-        int contentH = Math.max(170, footerY - GAP - contentY);
-        int sideW = Math.min(304, Math.max(238, contentW / 3));
-        int gridW = Math.max(220, contentW - sideW - GAP);
-        int tile = panelH < 390 ? 52 : 60;
-        return new Layout(panelX, panelY, panelW, panelH, contentX, contentW, searchY, contentY, contentH, contentY, 0, 0, contentX, gridW, tile, false);
+        return false;
     }
 
-    private int sideX(Layout layout) {
-        return layout.gridX() + layout.gridW() + GAP;
+    private List<OrderedText> descriptionLines() {
+        return textRenderer.wrapLines(Text.translatable("screen.blockreskinner.connected.description"), layout.sidePanel.w() - 20);
     }
 
-    private int sideW(Layout layout) {
-        return layout.contentRight() - sideX(layout);
+    private int overrideButtonWidth() {
+        return Math.min(92, Math.max(68, layout.sidePanel.w() - 170));
     }
 
-    private int overrideButtonWidth(Layout layout) {
-        return Math.min(96, Math.max(70, sideW(layout) - 158));
-    }
-
-    private int controlsHeaderY(Layout layout) {
-        return layout.contentY() + 62;
-    }
-
-    /**
-     * Rows start below the wrapped description; clamped so all four rows and
-     * their buttons always fit inside the side panel.
-     */
-    private int connectionStartY(Layout layout) {
-        int descLines = textRenderer.wrapLines(Text.translatable("screen.blockreskinner.connected.description"), sideW(layout) - 20).size();
-        int wanted = controlsHeaderY(layout) + 12 + descLines * 9 + 8;
-        int latest = layout.contentY() + layout.contentH() - ROW_PITCH * 4 + 2;
+    /** First connection row Y; below the wrapped description, clamped into the panel. */
+    private int rowsTop() {
+        ReskinLayout.Rect panel = layout.sidePanel;
+        int wanted = panel.y() + 62 + 20 + descriptionLines().size() * 9 + 6;
+        int latest = panel.bottom() - 6 - 4 * ROW_PITCH + (ROW_PITCH - ROW_HEIGHT);
         return Math.min(wanted, latest);
+    }
+
+    private Text overrideText(ConnectionOverride value) {
+        return switch (value) {
+            case AUTO -> Text.translatable("screen.blockreskinner.connected.override.auto");
+            case FORCE_ON -> Text.translatable("screen.blockreskinner.connected.override.connected");
+            case FORCE_OFF -> Text.translatable("screen.blockreskinner.connected.override.disconnected");
+        };
     }
 }

@@ -4,10 +4,8 @@ import net.minecraft.block.Block;
 import net.minecraft.block.BlockRenderType;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.FenceBlock;
-import net.minecraft.block.GrateBlock;
 import net.minecraft.block.LeavesBlock;
 import net.minecraft.block.PaneBlock;
-import net.minecraft.block.TranslucentBlock;
 import net.minecraft.block.WallBlock;
 import net.minecraft.fluid.Fluids;
 import net.minecraft.registry.Registries;
@@ -34,7 +32,8 @@ public final class SkinQueries {
             "light",
             "structure_void",
             "moving_piston",
-            "frosted_ice"
+            "frosted_ice",
+            "cobweb"
     );
 
     /** Substring denials, kept deliberately narrow. */
@@ -149,10 +148,7 @@ public final class SkinQueries {
         if (block instanceof LeavesBlock) {
             return SkinCategory.LEAVES;
         }
-        if (block instanceof GrateBlock) {
-            return SkinCategory.CUTOUT;
-        }
-        if (block instanceof TranslucentBlock) {
+        if (isGlassLike(state)) {
             return SkinCategory.TRANSPARENT;
         }
         if (state.contains(Properties.AXIS)) {
@@ -200,6 +196,16 @@ public final class SkinQueries {
             }
         }
         return false;
+    }
+
+    private static boolean isIceLike(BlockState state) {
+        String path = Registries.BLOCK.getId(state.getBlock()).getPath().toLowerCase(Locale.ROOT);
+        return path.equals("ice") || path.endsWith("_ice");
+    }
+
+    private static boolean isGlassLike(BlockState state) {
+        String path = Registries.BLOCK.getId(state.getBlock()).getPath().toLowerCase(Locale.ROOT);
+        return path.contains("glass") && !isIceLike(state);
     }
 
     private static int axisSort(BlockState state) {
