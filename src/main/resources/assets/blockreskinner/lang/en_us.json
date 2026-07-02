@@ -1,0 +1,20 @@
+{
+  "item.blockreskinner.reskin_wand": "Reskin Wand",
+  "itemGroup.blockreskinner": "Block Reskinner",
+  "screen.blockreskinner.simple.title": "Choose Visual Skin",
+  "screen.blockreskinner.connected.title": "Choose Connected Skin",
+  "screen.blockreskinner.search": "Search blocks",
+  "screen.blockreskinner.apply": "Apply",
+  "screen.blockreskinner.clear": "Clear",
+  "screen.blockreskinner.north": "North",
+  "screen.blockreskinner.east": "East",
+  "screen.blockreskinner.south": "South",
+  "screen.blockreskinner.west": "West",
+  "screen.blockreskinner.connection_controls": "Connection overrides",
+  "message.blockreskinner.applied": "Applied visual skin: %s",
+  "message.blockreskinner.cleared": "Cleared visual skin",
+  "message.blockreskinner.unsupported": "This block type is not supported yet",
+  "message.blockreskinner.invalid_skin": "That visual skin is not allowed here",
+  "message.blockreskinner.need_wand": "Hold the Reskin Wand to edit skins",
+  "message.blockreskinner.too_far": "Target block is too far away"
+}

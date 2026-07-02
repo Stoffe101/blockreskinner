@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "blockreskinner",
+  "version": "${version}",
+  "name": "Block Reskinner",
+  "description": "Server-authoritative visual block reskinning without replacing real blocks.",
+  "authors": [
+    "Skrra"
+  ],
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.skrra.blockreskinner.BlockReskinnerMod"
+    ],
+    "client": [
+      "com.skrra.blockreskinner.BlockReskinnerClient"
+    ]
+  },
+  "mixins": [
+    "blockreskinner.mixins.json",
+    {
+      "config": "blockreskinner.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=0.18.4",
+    "minecraft": "1.21.11",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
