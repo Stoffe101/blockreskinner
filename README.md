@@ -87,6 +87,14 @@ Run a local server:
 
 On Windows PowerShell, use `.\gradlew.bat` instead of `./gradlew`.
 
+## Creating A Release
+
+1. Push `master` or `main`.
+2. Go to GitHub -> Actions -> Create Release -> Run workflow.
+3. Enter the version without a leading `v`, for example `0.6.0-beta.2`.
+4. The workflow creates tag/release `v0.6.0-beta.2` and uploads `blockreskinner-0.6.0-beta.2.jar`.
+5. If release creation fails with permission denied, forbidden, or resource not accessible, go to GitHub repository -> Settings -> Actions -> General -> Workflow permissions and enable Read and write permissions, then save. Organization-level Actions settings can override repository settings, so check the organization workflow permissions too if this persists.
+
 ## Suggested Test Checklist
 
 1. Place obsidian and reskin it to oak planks or deepslate.
