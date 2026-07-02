@@ -3,3 +3,10 @@
 /build/
 /build/classes/java/client/
 /build/classes/java/main/
+
+# Minecraft/Fabric dev runtime
+run/
+
+# IntelliJ IDEA
+.idea/
+*.iml
