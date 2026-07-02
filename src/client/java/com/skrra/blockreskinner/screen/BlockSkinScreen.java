@@ -90,12 +90,16 @@ public class BlockSkinScreen extends Screen {
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        renderBackground(context, mouseX, mouseY, delta);
+    public void renderBackground(DrawContext context, int mouseX, int mouseY, float deltaTicks) {
+        super.renderBackground(context, mouseX, mouseY, deltaTicks);
+    }
+
+    @Override
+    public void render(DrawContext context, int mouseX, int mouseY, float deltaTicks) {
+        super.render(context, mouseX, mouseY, deltaTicks);
         context.drawCenteredTextWithShadow(textRenderer, title, width / 2, 10, 0xFFFFFF);
         renderGrid(context, mouseX, mouseY);
         renderSelected(context);
-        super.render(context, mouseX, mouseY, delta);
     }
 
     protected void renderGrid(DrawContext context, int mouseX, int mouseY) {

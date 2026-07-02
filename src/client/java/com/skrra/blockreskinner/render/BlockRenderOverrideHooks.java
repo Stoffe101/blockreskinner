@@ -1,14 +1,39 @@
 package com.skrra.blockreskinner.render;
 
+import com.skrra.blockreskinner.BlockReskinnerMod;
 import net.minecraft.block.BlockState;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.BlockRenderView;
 
+import java.util.HashSet;
+import java.util.Set;
+
 public final class BlockRenderOverrideHooks {
+    private static final Set<Long> LOGGED_RENDER_OVERRIDES = new HashSet<>();
+
     private BlockRenderOverrideHooks() {
     }
 
     public static BlockState resolve(BlockState state, BlockPos pos, BlockRenderView world) {
         return VisualStateResolver.resolve(state, pos, world);
+    }
+
+    public static void logRenderOverride(BlockPos pos, BlockState realState, BlockState resolvedState) {
+        if (realState == resolvedState || realState.equals(resolvedState)) {
+            return;
+        }
+        long key = pos.asLong();
+        if (LOGGED_RENDER_OVERRIDES.add(key)) {
+            BlockReskinnerMod.LOGGER.info(
+                    "Render override resolved: pos={} real={} visual={}",
+                    pos.toShortString(),
+                    realState,
+                    resolvedState
+            );
+        }
+    }
+
+    public static void clearRenderLog(BlockPos pos) {
+        LOGGED_RENDER_OVERRIDES.remove(pos.asLong());
     }
 }

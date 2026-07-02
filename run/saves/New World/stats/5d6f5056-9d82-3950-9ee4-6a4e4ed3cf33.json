@@ -1,0 +1,20 @@
+{
+  "stats": {
+    "minecraft:used": {
+      "minecraft:spruce_fence": 2,
+      "blockreskinner:reskin_wand": 29,
+      "minecraft:obsidian": 5
+    },
+    "minecraft:custom": {
+      "minecraft:time_since_rest": 9287,
+      "minecraft:walk_one_cm": 780,
+      "minecraft:total_world_time": 9331,
+      "minecraft:leave_game": 2,
+      "minecraft:crouch_one_cm": 51,
+      "minecraft:sneak_time": 95,
+      "minecraft:play_time": 9287,
+      "minecraft:time_since_death": 9287
+    }
+  },
+  "DataVersion": 4671
+}

@@ -5,6 +5,7 @@ import com.skrra.blockreskinner.skin.ConnectedSkinData;
 import com.skrra.blockreskinner.skin.ConnectionOverride;
 import com.skrra.blockreskinner.skin.SimpleSkinData;
 import com.skrra.blockreskinner.skin.SkinData;
+import com.skrra.blockreskinner.skin.SkinQueries;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.WallBlock;
 import net.minecraft.block.enums.WallShape;
@@ -21,9 +22,15 @@ public final class VisualStateResolver {
     public static BlockState resolve(BlockState realState, BlockPos pos, BlockRenderView world) {
         SkinData data = ClientSkinCache.get(pos);
         if (data instanceof SimpleSkinData simple) {
+            if (!SkinQueries.isSupportedTarget(realState) || SkinQueries.isConnectedBlock(realState)) {
+                return realState;
+            }
             return simple.visualState();
         }
         if (data instanceof ConnectedSkinData connected) {
+            if (!SkinQueries.isConnectedBlock(realState)) {
+                return realState;
+            }
             return resolveConnected(realState, connected);
         }
         return realState;

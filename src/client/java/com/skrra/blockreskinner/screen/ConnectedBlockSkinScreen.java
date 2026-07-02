@@ -37,25 +37,35 @@ public class ConnectedBlockSkinScreen extends BlockSkinScreen {
     protected void init() {
         super.init();
         int left = gridLeft();
-        int y = height - 84;
-        addDrawableChild(directionButton(Text.translatable("screen.blockreskinner.north"), left, y, () -> north, value -> north = value));
-        addDrawableChild(directionButton(Text.translatable("screen.blockreskinner.east"), left + 88, y, () -> east, value -> east = value));
-        addDrawableChild(directionButton(Text.translatable("screen.blockreskinner.south"), left + 176, y, () -> south, value -> south = value));
-        addDrawableChild(directionButton(Text.translatable("screen.blockreskinner.west"), left + 264, y, () -> west, value -> west = value));
+        int firstRow = height - 112;
+        int secondRow = height - 88;
+        int secondColumn = left + 184;
+        addDrawableChild(directionButton("screen.blockreskinner.connection.north", left, firstRow, () -> north, value -> north = value));
+        addDrawableChild(directionButton("screen.blockreskinner.connection.east", secondColumn, firstRow, () -> east, value -> east = value));
+        addDrawableChild(directionButton("screen.blockreskinner.connection.south", left, secondRow, () -> south, value -> south = value));
+        addDrawableChild(directionButton("screen.blockreskinner.connection.west", secondColumn, secondRow, () -> west, value -> west = value));
     }
 
-    private ButtonWidget directionButton(Text label, int x, int y, java.util.function.Supplier<ConnectionOverride> getter, java.util.function.Consumer<ConnectionOverride> setter) {
-        return ButtonWidget.builder(buttonText(label, getter.get()), button -> {
+    private ButtonWidget directionButton(String labelKey, int x, int y, java.util.function.Supplier<ConnectionOverride> getter, java.util.function.Consumer<ConnectionOverride> setter) {
+        return ButtonWidget.builder(buttonText(labelKey, getter.get()), button -> {
                     ConnectionOverride next = ConnectionEditorWidget.next(getter.get());
                     setter.accept(next);
-                    button.setMessage(buttonText(label, next));
+                    button.setMessage(buttonText(labelKey, next));
                 })
-                .dimensions(x, y, 82, 20)
+                .dimensions(x, y, 176, 20)
                 .build();
     }
 
-    private Text buttonText(Text label, ConnectionOverride value) {
-        return Text.literal(label.getString() + ": " + value.name());
+    private Text buttonText(String labelKey, ConnectionOverride value) {
+        return Text.translatable("screen.blockreskinner.connection.button", Text.translatable(labelKey), valueText(value));
+    }
+
+    private Text valueText(ConnectionOverride value) {
+        return switch (value) {
+            case AUTO -> Text.translatable("screen.blockreskinner.connection.auto");
+            case FORCE_ON -> Text.translatable("screen.blockreskinner.connection.connected");
+            case FORCE_OFF -> Text.translatable("screen.blockreskinner.connection.disconnected");
+        };
     }
 
     @Override
@@ -69,11 +79,12 @@ public class ConnectedBlockSkinScreen extends BlockSkinScreen {
     @Override
     protected void renderSelected(DrawContext context) {
         super.renderSelected(context);
-        context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.connection_controls"), gridLeft(), height - 96, 0xBBBBBB);
+        context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.connection_controls"), gridLeft(), height - 146, 0xFFFFFF);
+        context.drawWrappedTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.connected.description"), gridLeft(), height - 134, gridWidth(), 0xBBBBBB);
     }
 
     @Override
     protected int gridBottom() {
-        return height - 108;
+        return height - 158;
     }
 }

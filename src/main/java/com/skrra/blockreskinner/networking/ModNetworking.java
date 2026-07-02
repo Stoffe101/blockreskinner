@@ -7,10 +7,12 @@ import com.skrra.blockreskinner.networking.payload.OpenSkinScreenPayload;
 import com.skrra.blockreskinner.networking.payload.RemoveSkinPayload;
 import com.skrra.blockreskinner.networking.payload.RequestInitialSyncPayload;
 import com.skrra.blockreskinner.networking.payload.SyncSkinPayload;
+import com.skrra.blockreskinner.BlockReskinnerMod;
 import com.skrra.blockreskinner.skin.ConnectedSkinData;
 import com.skrra.blockreskinner.skin.ServerSkinStorage;
 import com.skrra.blockreskinner.skin.SimpleSkinData;
 import com.skrra.blockreskinner.skin.SkinData;
+import com.skrra.blockreskinner.skin.SkinQueries;
 import com.skrra.blockreskinner.skin.SkinValidation;
 import com.skrra.blockreskinner.util.BlockStateUtil;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
@@ -21,6 +23,9 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public final class ModNetworking {
     private ModNetworking() {
@@ -55,6 +60,13 @@ public final class ModNetworking {
         if (visual == null || !SkinValidation.canApplySimple(player, world, payload.pos(), visual)) {
             return;
         }
+        BlockReskinnerMod.LOGGER.info(
+                "Server applying simple skin: dimension={} pos={} real={} visual={}",
+                world.getRegistryKey().getValue(),
+                payload.pos().toShortString(),
+                world.getBlockState(payload.pos()),
+                visual
+        );
         SimpleSkinData data = new SimpleSkinData(payload.pos(), visual);
         ServerSkinStorage.get(world).put(data);
         syncSkin(world, data);
@@ -67,6 +79,17 @@ public final class ModNetworking {
         if (visual == null || !SkinValidation.canApplyConnected(player, world, payload.pos(), visual)) {
             return;
         }
+        BlockReskinnerMod.LOGGER.info(
+                "Server applying connected skin: dimension={} pos={} real={} visual={} north={} east={} south={} west={}",
+                world.getRegistryKey().getValue(),
+                payload.pos().toShortString(),
+                world.getBlockState(payload.pos()),
+                visual,
+                payload.north(),
+                payload.east(),
+                payload.south(),
+                payload.west()
+        );
         ConnectedSkinData data = new ConnectedSkinData(payload.pos(), visual, payload.north(), payload.east(), payload.south(), payload.west());
         ServerSkinStorage.get(world).put(data);
         syncSkin(world, data);
@@ -104,10 +127,42 @@ public final class ModNetworking {
 
     private static void syncInitial(ServerPlayerEntity player) {
         ServerWorld world = player.getEntityWorld();
-        for (SkinData data : ServerSkinStorage.get(world).all()) {
+        ServerSkinStorage storage = ServerSkinStorage.get(world);
+        List<BlockPos> invalidEntries = new ArrayList<>();
+        for (SkinData data : storage.all()) {
+            if (!isStoredSkinStillApplicable(world, data)) {
+                invalidEntries.add(data.pos());
+                continue;
+            }
             if (ServerPlayNetworking.canSend(player, SyncSkinPayload.ID)) {
                 ServerPlayNetworking.send(player, new SyncSkinPayload(data));
             }
         }
+        for (BlockPos pos : invalidEntries) {
+            if (storage.remove(pos)) {
+                BlockReskinnerMod.LOGGER.info(
+                        "Removed stale visual skin during initial sync: dimension={} pos={}",
+                        world.getRegistryKey().getValue(),
+                        pos.toShortString()
+                );
+            }
+        }
+    }
+
+    private static boolean isStoredSkinStillApplicable(ServerWorld world, SkinData data) {
+        if (!world.isChunkLoaded(data.pos())) {
+            return true;
+        }
+        BlockState real = world.getBlockState(data.pos());
+        if (!SkinQueries.isSupportedTarget(real)) {
+            return false;
+        }
+        if (data instanceof SimpleSkinData simple) {
+            return !SkinQueries.isConnectedBlock(real) && SkinQueries.isAllowedSimpleVisual(simple.visualState());
+        }
+        if (data instanceof ConnectedSkinData connected) {
+            return SkinQueries.isAllowedConnectedVisual(real, connected.visualMaterialState());
+        }
+        return false;
     }
 }

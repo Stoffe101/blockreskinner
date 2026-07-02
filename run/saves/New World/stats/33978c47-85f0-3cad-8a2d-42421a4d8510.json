@@ -1,0 +1,24 @@
+{
+  "stats": {
+    "minecraft:custom": {
+      "minecraft:sprint_one_cm": 2728,
+      "minecraft:time_since_rest": 6353,
+      "minecraft:walk_one_cm": 8950,
+      "minecraft:total_world_time": 14402,
+      "minecraft:leave_game": 1,
+      "minecraft:crouch_one_cm": 154,
+      "minecraft:sneak_time": 246,
+      "minecraft:play_time": 6353,
+      "minecraft:jump": 3,
+      "minecraft:time_since_death": 6353
+    },
+    "minecraft:used": {
+      "minecraft:spruce_fence": 4,
+      "minecraft:cobblestone_wall": 1,
+      "minecraft:spruce_trapdoor": 4,
+      "blockreskinner:reskin_wand": 30,
+      "minecraft:obsidian": 1
+    }
+  },
+  "DataVersion": 4671
+}
