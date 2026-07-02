@@ -21,6 +21,18 @@ loom {
     }
 }
 
+sourceSets {
+    jadeApiStubs {
+        java.srcDir "src/jadeApiStubs/java"
+        compileClasspath += sourceSets.main.compileClasspath + sourceSets.client.compileClasspath
+    }
+}
+
+tasks.named("compileClientJava") {
+    dependsOn tasks.named("compileJadeApiStubsJava")
+    classpath += sourceSets.jadeApiStubs.output
+}
+
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"

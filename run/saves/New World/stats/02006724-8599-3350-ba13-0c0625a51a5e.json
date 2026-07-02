@@ -1,0 +1,16 @@
+{
+  "stats": {
+    "minecraft:custom": {
+      "minecraft:time_since_rest": 24000,
+      "minecraft:walk_one_cm": 2738,
+      "minecraft:total_world_time": 24056,
+      "minecraft:sneak_time": 10,
+      "minecraft:play_time": 24000,
+      "minecraft:time_since_death": 24000
+    },
+    "minecraft:used": {
+      "blockreskinner:reskin_wand": 12
+    }
+  },
+  "DataVersion": 4671
+}

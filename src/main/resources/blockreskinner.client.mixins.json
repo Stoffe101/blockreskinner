@@ -3,8 +3,7 @@
   "package": "com.skrra.blockreskinner.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
-    "BlockRenderManagerMixin",
-    "SectionBuilderMixin"
+    "ChunkRendererRegionMixin"
   ],
   "injectors": {
     "defaultRequire": 1

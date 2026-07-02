@@ -3,11 +3,12 @@ package com.skrra.blockreskinner.skin;
 import net.minecraft.util.math.BlockPos;
 
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class ClientSkinCache {
-    private static final Map<Long, SkinData> SKINS = new HashMap<>();
+    // Read from chunk-build worker threads while the network thread mutates it.
+    private static final Map<Long, SkinData> SKINS = new ConcurrentHashMap<>();
 
     private ClientSkinCache() {
     }

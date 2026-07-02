@@ -5,11 +5,12 @@ import net.minecraft.block.BlockState;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.BlockRenderView;
 
-import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class BlockRenderOverrideHooks {
-    private static final Set<Long> LOGGED_RENDER_OVERRIDES = new HashSet<>();
+    // Touched from chunk-build worker threads.
+    private static final Set<Long> LOGGED_RENDER_OVERRIDES = ConcurrentHashMap.newKeySet();
 
     private BlockRenderOverrideHooks() {
     }

@@ -56,8 +56,12 @@ public final class ModNetworking {
 
     private static void handleApplySimple(ServerPlayerEntity player, ApplySimpleSkinPayload payload) {
         ServerWorld world = player.getEntityWorld();
-        BlockState visual = BlockStateUtil.parse(payload.visualState());
-        if (visual == null || !SkinValidation.canApplySimple(player, world, payload.pos(), visual)) {
+        BlockState parsed = BlockStateUtil.parse(payload.visualState());
+        if (parsed == null) {
+            return;
+        }
+        BlockState visual = SkinQueries.normalizeSimpleVisual(parsed);
+        if (!SkinValidation.canApplySimple(player, world, payload.pos(), visual)) {
             return;
         }
         BlockReskinnerMod.LOGGER.info(

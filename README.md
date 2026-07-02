@@ -1,8 +1,8 @@
 # Block Reskinner
 
-Block Reskinner is a Fabric client + server mod for Minecraft 1.21.11. It lets a player apply a server-stored visual skin to a block without replacing the real world block state.
+Block Reskinner is a Fabric client + server mod for Minecraft 1.21.11. It lets players apply server-stored visual skins to blocks without replacing the real world block state.
 
-Example: reskin an obsidian portal frame as oak planks. The block still behaves, mines, drops, resists explosions, and participates in portal logic as obsidian. Clients with the mod installed render the visual override; vanilla clients see the original block.
+Example: an obsidian Nether portal frame can be rendered as oak planks for modded clients. The block is still obsidian for mining speed, drops, collision, explosion resistance, portal behavior, redstone checks, and all other server logic.
 
 ## Versions
 
@@ -13,48 +13,107 @@ Example: reskin an obsidian portal frame as oak planks. The block still behaves,
 - Loom: 1.17.13
 - Gradle wrapper: 9.6.1
 
-## Run
+## Required On Client And Server
+
+This is a required client + server mod. The server stores and syncs visual overrides. Clients with the mod installed render those overrides. Vanilla clients are not expected to see reskinned blocks.
+
+The mod does not call `world.setBlockState(pos, visualState)` to apply a skin. The real block remains unchanged.
+
+## Using The Wand
+
+Get the wand in creative search or with:
+
+```mcfunction
+/give @s blockreskinner:reskin_wand
+```
+
+Use it like this:
+
+1. Right-click a supported block with the Reskin Wand.
+2. Search or scroll for a visual skin.
+3. Pick a skin and press Apply.
+4. Shift-right-click a reskinned block with the wand to clear it.
+
+## Skin Modes
+
+Normal full-block mode is used for ordinary cube-like blocks. The selector includes safe full cube model blocks, glass-like full cubes, and log/pillar axis variants. Thin, tiny, multipart, block-entity, fluid, redstone, plant, door, trapdoor, fence, wall, pane, bar, and chain-like models are excluded from normal mode.
+
+Log and pillar entries are shown separately:
+
+- Vertical: axis Y
+- East/West: axis X
+- North/South: axis Z
+
+Connected block mode is used only when the real clicked block is a supported connected block:
+
+- Fences
+- Walls
+- Glass panes
+- Iron bars
+
+The connected screen shows the current real connection state and a separate visual override. `Auto` follows the real block's connection, `Connected` forces the visual side on, and `Disconnected` forces the visual side off. The real collision and behavior do not change.
+
+## Jade Compatibility
+
+Jade support is optional. If Jade is installed, Block Reskinner adds tooltip lines only for reskinned blocks:
+
+- `Visual Skin: Emerald Ore`
+- `Visual Material: Deepslate`
+- `Connection Overrides: E Connected, S Disconnected`
+
+Jade still identifies the real block normally. For example, obsidian reskinned to emerald ore still appears as obsidian with an added visual skin line.
+
+For manual Jade testing, place a compatible Jade Fabric jar in `run/mods`, start `./gradlew runClient`, reskin a block, and look at it with Jade enabled. The mod also launches normally without Jade installed.
+
+## Build And Test
+
+Build locally:
 
 ```bash
-./gradlew build
+./gradlew clean build
+```
+
+Run a local client:
+
+```bash
 ./gradlew runClient
 ```
 
-On Windows PowerShell:
-
-```powershell
-.\gradlew.bat build
-.\gradlew.bat runClient
-```
-
-Server launch is also configured:
+Run a local server:
 
 ```bash
 ./gradlew runServer
 ```
 
-## How To Test
+On Windows PowerShell, use `.\gradlew.bat` instead of `./gradlew`.
 
-1. Start a dev client with `./gradlew runClient`.
-2. Create or enter a world and give yourself `blockreskinner:reskin_wand`.
-3. Right-click a supported block with the wand.
-4. Search for a visual block skin and press Apply.
-5. Shift-right-click the same block with the wand to clear it.
+## Suggested Test Checklist
 
-For multiplayer testing, run a Fabric server with this mod and Fabric API installed. Every client that should see reskins also needs the mod installed. Vanilla clients can join only if your server setup permits them, but they will not see visual overrides.
+1. Place obsidian and reskin it to oak planks or deepslate.
+2. Confirm the block visually changes but still mines/drops/behaves as obsidian.
+3. Build and light a Nether portal, then reskin the frame.
+4. Confirm the portal stays active.
+5. Try log and pillar axis variants and confirm the labels are clear.
+6. Confirm chain and other unsafe non-full models do not appear in normal full-block mode.
+7. Place fences, walls, panes, or iron bars next to connectable neighbors.
+8. Open connected mode and confirm current real connections are shown.
+9. Change visual connection overrides and confirm only rendering changes.
+10. Leave and rejoin the world and confirm saved skins sync back.
 
 ## Known Limitations
 
-- Rendering is implemented through a vanilla `BlockRenderManager.renderBlock` mixin. This works for the vanilla Fabric renderer path, but Sodium/Indium compatibility has not been validated.
+- Rendering currently targets the vanilla Fabric chunk renderer path. Sodium/Indium compatibility has not been validated.
+- Connected rendering uses compatible connected block models and vanilla-like state properties. It does not yet implement arbitrary material-texture remapping.
 - Sync currently broadcasts edits to players in the edited dimension instead of narrowing to exact chunk-tracking players.
-- Connected blocks support fences, walls, panes, and iron bars as a separate category, but the MVP uses vanilla model states and simple connection overrides.
-- The allowed visual block list is conservative. Blocks with block entities, fluids, special renderers, redstone-like behavior, plants, doors, trapdoors, and other risky shapes are intentionally excluded.
+- The safe visual list is intentionally conservative. An advanced unsafe model mode may be added later.
 
 ## Files To Inspect First
 
 - `src/main/java/com/skrra/blockreskinner/item/ReskinWandItem.java`
 - `src/main/java/com/skrra/blockreskinner/networking/ModNetworking.java`
+- `src/main/java/com/skrra/blockreskinner/skin/SkinQueries.java`
 - `src/main/java/com/skrra/blockreskinner/skin/ServerSkinStorage.java`
 - `src/client/java/com/skrra/blockreskinner/render/VisualStateResolver.java`
-- `src/client/java/com/skrra/blockreskinner/mixin/BlockRenderManagerMixin.java`
+- `src/client/java/com/skrra/blockreskinner/mixin/SectionBuilderMixin.java`
 - `src/client/java/com/skrra/blockreskinner/screen/BlockSkinScreen.java`
+- `src/client/java/com/skrra/blockreskinner/screen/ConnectedBlockSkinScreen.java`
