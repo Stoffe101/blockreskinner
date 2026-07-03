@@ -1,5 +1,7 @@
 package com.skrra.blockreskinner.render;
 
+import com.skrra.blockreskinner.render.head.VisualHeadRenderer;
+import net.minecraft.block.AbstractSkullBlock;
 import net.minecraft.block.BlockRenderType;
 import net.minecraft.block.BlockState;
 import net.minecraft.client.MinecraftClient;
@@ -8,10 +10,15 @@ import net.minecraft.client.render.BlockRenderLayers;
 import net.minecraft.client.render.DiffuseLighting;
 import net.minecraft.client.render.LightmapTextureManager;
 import net.minecraft.client.render.OverlayTexture;
+import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.block.BlockModelRenderer;
+import net.minecraft.client.render.block.entity.SkullBlockEntityModel;
+import net.minecraft.client.render.block.entity.SkullBlockEntityRenderer;
+import net.minecraft.client.render.command.RenderDispatcher;
 import net.minecraft.client.render.model.BlockStateModel;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.util.math.Direction;
 import net.minecraft.world.biome.GrassColors;
 import org.joml.Quaternionf;
 
@@ -58,7 +65,34 @@ public class BlockPreviewGuiElementRenderer extends SpecialGuiElementRenderer<Bl
         ));
         matrices.scale(0.625F, 0.625F, 0.625F);
         matrices.translate(-0.5F, -0.5F, -0.5F);
-        renderBlockModel(client, state.blockState(), matrices);
+        if (state.blockState().getBlock() instanceof AbstractSkullBlock) {
+            renderSkullPreview(client, state.blockState(), matrices);
+        } else {
+            renderBlockModel(client, state.blockState(), matrices);
+        }
+    }
+
+    /**
+     * Heads have no baked chunk model, so previews go through the vanilla
+     * skull model renderer, submitted and flushed on the entity render
+     * dispatcher's queue exactly like vanilla's entity GUI elements.
+     */
+    private void renderSkullPreview(MinecraftClient client, BlockState blockState, MatrixStack matrices) {
+        if (!(blockState.getBlock() instanceof AbstractSkullBlock skull)) {
+            return;
+        }
+        SkullBlockEntityModel model = VisualHeadRenderer.getModel(client, skull.getSkullType());
+        if (model == null) {
+            return;
+        }
+        client.gameRenderer.getDiffuseLighting().setShaderLights(DiffuseLighting.Type.ENTITY_IN_UI);
+        Direction facing = VisualHeadRenderer.wallFacing(blockState);
+        float yaw = VisualHeadRenderer.yawDegrees(blockState, facing);
+        RenderLayer layer = SkullBlockEntityRenderer.getCutoutRenderLayer(skull.getSkullType(), null);
+        RenderDispatcher dispatcher = client.gameRenderer.getEntityRenderDispatcher();
+        SkullBlockEntityRenderer.render(facing, yaw, 0.0F, matrices, dispatcher.getQueue(),
+                LightmapTextureManager.MAX_LIGHT_COORDINATE, model, layer, 0, null);
+        dispatcher.render();
     }
 
     /**

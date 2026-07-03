@@ -155,6 +155,7 @@ public class BlockSkinScreen extends Screen {
         String aliases = switch (skinCategory) {
             case LEAVES -> "plants plant leaves leaf fern flower grass sapling mushroom roots";
             case CRYSTALS -> "crystal crystals amethyst cluster bud buds";
+            case HEADS -> "skull skulls head heads mob skeleton wither zombie creeper piglin dragon";
             default -> "";
         };
         return id.toLowerCase(Locale.ROOT).contains(needle)
@@ -654,6 +655,7 @@ public class BlockSkinScreen extends Screen {
         TRANSPARENT("screen.blockreskinner.category.transparent"),
         LEAVES("screen.blockreskinner.category.leaves"),
         CRYSTALS("screen.blockreskinner.category.crystals"),
+        HEADS("screen.blockreskinner.category.heads"),
         ORES("screen.blockreskinner.category.ores"),
         STONE_BRICKS("screen.blockreskinner.category.stone_bricks"),
         WOOD("screen.blockreskinner.category.wood"),
@@ -682,6 +684,7 @@ public class BlockSkinScreen extends Screen {
                 case TRANSPARENT -> category == SkinCategory.TRANSPARENT;
                 case LEAVES -> category == SkinCategory.LEAVES;
                 case CRYSTALS -> category == SkinCategory.CRYSTALS;
+                case HEADS -> category == SkinCategory.HEADS;
                 case ORES -> path.endsWith("_ore") || path.equals("ancient_debris")
                         || (path.startsWith("raw_") && path.endsWith("_block"));
                 case STONE_BRICKS -> !path.endsWith("_ore")

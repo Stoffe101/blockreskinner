@@ -17,6 +17,11 @@ public final class ClientSkinCache {
         return SKINS.get(pos.asLong());
     }
 
+    /** Live view of all cached skins; safe to iterate from the render thread. */
+    public static Collection<SkinData> all() {
+        return SKINS.values();
+    }
+
     public static boolean isEmpty() {
         return SKINS.isEmpty();
     }

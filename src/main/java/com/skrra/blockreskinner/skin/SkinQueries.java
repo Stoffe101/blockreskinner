@@ -1,5 +1,6 @@
 package com.skrra.blockreskinner.skin;
 
+import net.minecraft.block.AbstractSkullBlock;
 import net.minecraft.block.AmethystClusterBlock;
 import net.minecraft.block.AttachedStemBlock;
 import net.minecraft.block.Block;
@@ -12,17 +13,20 @@ import net.minecraft.block.GrateBlock;
 import net.minecraft.block.LeavesBlock;
 import net.minecraft.block.PaneBlock;
 import net.minecraft.block.PlantBlock;
+import net.minecraft.block.SkullBlock;
 import net.minecraft.block.StainedGlassBlock;
 import net.minecraft.block.StemBlock;
 import net.minecraft.block.TallPlantBlock;
 import net.minecraft.block.TintedGlassBlock;
 import net.minecraft.block.WallBlock;
+import net.minecraft.block.WallSkullBlock;
 import net.minecraft.fluid.Fluids;
 import net.minecraft.registry.Registries;
 import net.minecraft.state.property.Properties;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.RotationPropertyHelper;
 import net.minecraft.world.EmptyBlockView;
 
 import java.util.ArrayList;
@@ -50,6 +54,8 @@ public final class SkinQueries {
             "infested_"
     };
 
+    private static final Direction[] HORIZONTALS = {Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST};
+
     private SkinQueries() {
     }
 
@@ -67,18 +73,42 @@ public final class SkinQueries {
      * server (payload validation). A visual is allowed when it passes the
      * shared safety checks and one of the category-specific rules below.
      *
-     * <p>Skulls/heads are intentionally unsupported: they have block entities
-     * and render through SkullBlockEntityRenderer, which the chunk-mesh state
-     * substitution cannot drive. Supporting them needs a dedicated visual-only
-     * renderer (TODO).
+     * <p>Heads/skulls are validated separately: their block states have block
+     * entities and an invisible chunk model, so they bypass the renderable
+     * check and are drawn by the dedicated client-only VisualHeadRenderer
+     * instead of the chunk mesh.
      */
     public static boolean isAllowedSimpleVisual(BlockState state) {
-        if (!isSafeRenderable(state) || isConnectedBlock(state) || hasDeniedName(state)) {
+        if (state.isAir() || isConnectedBlock(state) || hasDeniedName(state)) {
+            return false;
+        }
+        if (isAllowedHeadVisual(state)) {
+            return true;
+        }
+        if (!isSafeRenderable(state)) {
             return false;
         }
         return isAllowedFullBlockVisual(state)
                 || isAllowedPlantVisual(state)
                 || isAllowedCrystalVisual(state);
+    }
+
+    /**
+     * Vanilla mob heads and skulls, floor and wall variants. Player heads are
+     * intentionally excluded for now: they need GameProfile/ProfileComponent
+     * data that a plain BlockState cannot carry — supporting them requires
+     * storing and syncing profile data alongside the skin and resolving the
+     * skin texture through the player skin cache. Modded skull types are also
+     * excluded because their models are unknown to the visual head renderer.
+     */
+    public static boolean isAllowedHeadVisual(BlockState state) {
+        if (!(state.getBlock() instanceof AbstractSkullBlock skull)) {
+            return false;
+        }
+        if (!state.getFluidState().isOf(Fluids.EMPTY)) {
+            return false;
+        }
+        return skull.getSkullType() instanceof SkullBlock.Type type && type != SkullBlock.Type.PLAYER;
     }
 
     /**
@@ -147,6 +177,9 @@ public final class SkinQueries {
         if (state.getBlock() instanceof PlantBlock && state.contains(Properties.AGE_3)) {
             state = state.with(Properties.AGE_3, 3);
         }
+        if (state.getBlock() instanceof AbstractSkullBlock && state.contains(Properties.POWERED)) {
+            state = state.with(Properties.POWERED, false);
+        }
         return state;
     }
 
@@ -162,6 +195,14 @@ public final class SkinQueries {
                 } else if (block instanceof AmethystClusterBlock && state.contains(Properties.FACING)) {
                     for (Direction facing : Direction.values()) {
                         states.add(state.with(Properties.FACING, facing));
+                    }
+                } else if (block instanceof WallSkullBlock && state.contains(WallSkullBlock.FACING)) {
+                    for (Direction facing : HORIZONTALS) {
+                        states.add(state.with(WallSkullBlock.FACING, facing));
+                    }
+                } else if (block instanceof SkullBlock && state.contains(SkullBlock.ROTATION)) {
+                    for (Direction facing : HORIZONTALS) {
+                        states.add(state.with(SkullBlock.ROTATION, RotationPropertyHelper.fromDirection(facing)));
                     }
                 } else {
                     states.add(state);
@@ -207,6 +248,9 @@ public final class SkinQueries {
         if (block instanceof PaneBlock) {
             return SkinCategory.CONNECTED_PANES_AND_BARS;
         }
+        if (block instanceof AbstractSkullBlock) {
+            return SkinCategory.HEADS;
+        }
         if (block instanceof LeavesBlock || block instanceof PlantBlock) {
             return SkinCategory.LEAVES;
         }
@@ -234,6 +278,25 @@ public final class SkinQueries {
         if (state.getBlock() instanceof AmethystClusterBlock && state.contains(Properties.FACING)) {
             Direction facing = state.get(Properties.FACING);
             return new TextKey("screen.blockreskinner.facing." + facing.asString(), "Facing: " + facing.asString());
+        }
+        if (state.getBlock() instanceof WallSkullBlock && state.contains(WallSkullBlock.FACING)) {
+            Direction facing = state.get(WallSkullBlock.FACING);
+            return new TextKey("screen.blockreskinner.facing." + facing.asString(), "Facing: " + facing.asString() + " (wall)");
+        }
+        if (state.getBlock() instanceof SkullBlock && state.contains(SkullBlock.ROTATION)) {
+            Direction facing = rotationDirection(state.get(SkullBlock.ROTATION));
+            if (facing != null) {
+                return new TextKey("screen.blockreskinner.facing." + facing.asString(), "Rotation: " + state.get(SkullBlock.ROTATION));
+            }
+        }
+        return null;
+    }
+
+    private static Direction rotationDirection(int rotation) {
+        for (Direction direction : HORIZONTALS) {
+            if (RotationPropertyHelper.fromDirection(direction) == rotation) {
+                return direction;
+            }
         }
         return null;
     }
@@ -314,7 +377,24 @@ public final class SkinQueries {
                 case WEST -> 5;
             };
         }
+        if (state.getBlock() instanceof WallSkullBlock && state.contains(WallSkullBlock.FACING)) {
+            return horizontalSort(state.get(WallSkullBlock.FACING));
+        }
+        if (state.getBlock() instanceof SkullBlock && state.contains(SkullBlock.ROTATION)) {
+            Direction facing = rotationDirection(state.get(SkullBlock.ROTATION));
+            return facing == null ? 9 : horizontalSort(facing);
+        }
         return 0;
+    }
+
+    private static int horizontalSort(Direction direction) {
+        return switch (direction) {
+            case NORTH -> 0;
+            case EAST -> 1;
+            case SOUTH -> 2;
+            case WEST -> 3;
+            default -> 4;
+        };
     }
 
     public record TextKey(String labelKey, String debugText) {
