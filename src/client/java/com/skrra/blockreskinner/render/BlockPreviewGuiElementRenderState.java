@@ -12,6 +12,7 @@ import org.jspecify.annotations.Nullable;
  */
 public record BlockPreviewGuiElementRenderState(
         BlockState blockState,
+        @Nullable String playerName,
         int x1,
         int y1,
         int x2,
@@ -21,6 +22,11 @@ public record BlockPreviewGuiElementRenderState(
         @Nullable ScreenRect bounds
 ) implements SpecialGuiElementRenderState {
     public BlockPreviewGuiElementRenderState(BlockState blockState, int x1, int y1, int x2, int y2, float scale, @Nullable ScreenRect scissorArea) {
-        this(blockState, x1, y1, x2, y2, scale, scissorArea, SpecialGuiElementRenderState.createBounds(x1, y1, x2, y2, scissorArea));
+        this(blockState, null, x1, y1, x2, y2, scale, scissorArea);
+    }
+
+    /** Player-head preview: renders the given player's skin once resolved. */
+    public BlockPreviewGuiElementRenderState(BlockState blockState, @Nullable String playerName, int x1, int y1, int x2, int y2, float scale, @Nullable ScreenRect scissorArea) {
+        this(blockState, playerName, x1, y1, x2, y2, scale, scissorArea, SpecialGuiElementRenderState.createBounds(x1, y1, x2, y2, scissorArea));
     }
 }

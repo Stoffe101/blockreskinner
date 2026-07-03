@@ -1,11 +1,14 @@
 package com.skrra.blockreskinner.compat.jade;
 
 import com.skrra.blockreskinner.BlockReskinnerMod;
+import com.skrra.blockreskinner.render.head.PlayerHeadProfiles;
 import com.skrra.blockreskinner.skin.ClientSkinCache;
 import com.skrra.blockreskinner.skin.ConnectedSkinData;
 import com.skrra.blockreskinner.skin.ConnectionOverride;
+import com.skrra.blockreskinner.skin.PlayerHeadSkinData;
 import com.skrra.blockreskinner.skin.SimpleSkinData;
 import com.skrra.blockreskinner.skin.SkinData;
+import net.minecraft.block.Blocks;
 import net.minecraft.text.Text;
 import net.minecraft.text.MutableText;
 import net.minecraft.util.Identifier;
@@ -27,6 +30,13 @@ public enum ReskinJadeProvider implements IBlockComponentProvider {
         SkinData data = ClientSkinCache.get(accessor.getPosition());
         if (data instanceof SimpleSkinData simple) {
             tooltip.add(Text.translatable("jade.blockreskinner.visual_skin", simple.visualState().getBlock().getName()));
+            return;
+        }
+        if (data instanceof PlayerHeadSkinData playerHead) {
+            tooltip.add(Text.translatable("jade.blockreskinner.visual_skin", Blocks.PLAYER_HEAD.getName()));
+            boolean resolved = PlayerHeadProfiles.status(playerHead.playerName()) == PlayerHeadProfiles.Status.RESOLVED;
+            tooltip.add(Text.translatable(resolved ? "jade.blockreskinner.player" : "jade.blockreskinner.player_unresolved",
+                    playerHead.playerName()));
             return;
         }
         if (data instanceof ConnectedSkinData connected) {

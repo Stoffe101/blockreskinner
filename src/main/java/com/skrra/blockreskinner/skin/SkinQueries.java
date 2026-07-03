@@ -112,6 +112,27 @@ public final class SkinQueries {
     }
 
     /**
+     * Valid Minecraft username: 3-16 characters, letters/digits/underscore.
+     * Used by the GUI, the server payload handler, and save loading.
+     */
+    public static boolean isValidPlayerName(String name) {
+        if (name == null) {
+            return false;
+        }
+        String trimmed = name.trim();
+        if (trimmed.length() < 3 || trimmed.length() > 16) {
+            return false;
+        }
+        for (int i = 0; i < trimmed.length(); i++) {
+            char c = trimmed.charAt(i);
+            if (!(c == '_' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * Strict full-cube rule: full outline plus full collision. Also admits
      * leaves, glass/ice, and grates — all full cubes with their own category.
      */
@@ -209,6 +230,10 @@ public final class SkinQueries {
                 }
             }
         }
+        // The Player Head editor entry: not a valid SimpleSkin visual (the
+        // server rejects player skull states there), but selecting it in the
+        // GUI opens the name/rotation editor which applies a PlayerHeadSkinData.
+        states.add(net.minecraft.block.Blocks.PLAYER_HEAD.getDefaultState());
         states.sort(Comparator
                 .comparing(SkinQueries::category)
                 .thenComparing(state -> Registries.BLOCK.getId(state.getBlock()).toString())
@@ -283,7 +308,8 @@ public final class SkinQueries {
             Direction facing = state.get(WallSkullBlock.FACING);
             return new TextKey("screen.blockreskinner.facing." + facing.asString(), "Facing: " + facing.asString() + " (wall)");
         }
-        if (state.getBlock() instanceof SkullBlock && state.contains(SkullBlock.ROTATION)) {
+        if (state.getBlock() instanceof SkullBlock skullBlock && state.contains(SkullBlock.ROTATION)
+                && skullBlock.getSkullType() != SkullBlock.Type.PLAYER) {
             Direction facing = rotationDirection(state.get(SkullBlock.ROTATION));
             if (facing != null) {
                 return new TextKey("screen.blockreskinner.facing." + facing.asString(), "Rotation: " + state.get(SkullBlock.ROTATION));

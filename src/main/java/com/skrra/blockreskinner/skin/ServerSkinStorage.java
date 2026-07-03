@@ -74,7 +74,19 @@ public class ServerSkinStorage extends PersistentState {
 
     private static SkinData readSkin(NbtCompound tag) {
         BlockPos pos = BlockPos.fromLong(tag.getLong("pos", 0L));
-        SkinType type = SkinType.valueOf(tag.getString("type", SkinType.SIMPLE.name()));
+        SkinType type;
+        try {
+            type = SkinType.valueOf(tag.getString("type", SkinType.SIMPLE.name()));
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+        if (type == SkinType.PLAYER_HEAD) {
+            String player = tag.getString("player", "");
+            if (!SkinQueries.isValidPlayerName(player)) {
+                return null;
+            }
+            return new PlayerHeadSkinData(pos, player, Math.floorMod(tag.getInt("rotation", 0), 16));
+        }
         BlockState visual = BlockStateUtil.parse(tag.getString("visual", ""));
         if (visual == null) {
             return null;
@@ -104,6 +116,9 @@ public class ServerSkinStorage extends PersistentState {
             tag.putInt("west", connected.west().ordinal());
         } else if (data instanceof SimpleSkinData simple) {
             tag.putString("visual", BlockStateUtil.toString(simple.visualState()));
+        } else if (data instanceof PlayerHeadSkinData playerHead) {
+            tag.putString("player", playerHead.playerName());
+            tag.putInt("rotation", playerHead.rotation());
         }
         return tag;
     }

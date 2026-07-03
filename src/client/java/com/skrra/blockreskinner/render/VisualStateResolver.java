@@ -3,10 +3,12 @@ package com.skrra.blockreskinner.render;
 import com.skrra.blockreskinner.skin.ClientSkinCache;
 import com.skrra.blockreskinner.skin.ConnectedSkinData;
 import com.skrra.blockreskinner.skin.ConnectionOverride;
+import com.skrra.blockreskinner.skin.PlayerHeadSkinData;
 import com.skrra.blockreskinner.skin.SimpleSkinData;
 import com.skrra.blockreskinner.skin.SkinData;
 import com.skrra.blockreskinner.skin.SkinQueries;
 import net.minecraft.block.BlockState;
+import net.minecraft.block.Blocks;
 import net.minecraft.block.WallBlock;
 import net.minecraft.block.enums.WallShape;
 import net.minecraft.state.property.BooleanProperty;
@@ -32,6 +34,14 @@ public final class VisualStateResolver {
                 return realState;
             }
             return resolveConnected(realState, connected);
+        }
+        if (data instanceof PlayerHeadSkinData) {
+            if (!SkinQueries.isSupportedTarget(realState) || SkinQueries.isConnectedBlock(realState)) {
+                return realState;
+            }
+            // Player head states have no chunk geometry; this hides the real
+            // block so VisualHeadRenderer can draw the head in its place.
+            return Blocks.PLAYER_HEAD.getDefaultState();
         }
         return realState;
     }

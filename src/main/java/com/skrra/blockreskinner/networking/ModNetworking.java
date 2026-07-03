@@ -1,6 +1,7 @@
 package com.skrra.blockreskinner.networking;
 
 import com.skrra.blockreskinner.networking.payload.ApplyConnectedSkinPayload;
+import com.skrra.blockreskinner.networking.payload.ApplyPlayerHeadSkinPayload;
 import com.skrra.blockreskinner.networking.payload.ApplySimpleSkinPayload;
 import com.skrra.blockreskinner.networking.payload.ClearSkinPayload;
 import com.skrra.blockreskinner.networking.payload.OpenSkinScreenPayload;
@@ -9,6 +10,7 @@ import com.skrra.blockreskinner.networking.payload.RequestInitialSyncPayload;
 import com.skrra.blockreskinner.networking.payload.SyncSkinPayload;
 import com.skrra.blockreskinner.BlockReskinnerMod;
 import com.skrra.blockreskinner.skin.ConnectedSkinData;
+import com.skrra.blockreskinner.skin.PlayerHeadSkinData;
 import com.skrra.blockreskinner.skin.ServerSkinStorage;
 import com.skrra.blockreskinner.skin.SimpleSkinData;
 import com.skrra.blockreskinner.skin.SkinData;
@@ -34,6 +36,7 @@ public final class ModNetworking {
     public static void registerServer() {
         PayloadTypeRegistry.playC2S().register(ApplySimpleSkinPayload.ID, ApplySimpleSkinPayload.CODEC);
         PayloadTypeRegistry.playC2S().register(ApplyConnectedSkinPayload.ID, ApplyConnectedSkinPayload.CODEC);
+        PayloadTypeRegistry.playC2S().register(ApplyPlayerHeadSkinPayload.ID, ApplyPlayerHeadSkinPayload.CODEC);
         PayloadTypeRegistry.playC2S().register(ClearSkinPayload.ID, ClearSkinPayload.CODEC);
         PayloadTypeRegistry.playC2S().register(RequestInitialSyncPayload.ID, RequestInitialSyncPayload.CODEC);
 
@@ -45,6 +48,8 @@ public final class ModNetworking {
                 context.server().execute(() -> handleApplySimple(context.player(), payload)));
         ServerPlayNetworking.registerGlobalReceiver(ApplyConnectedSkinPayload.ID, (payload, context) ->
                 context.server().execute(() -> handleApplyConnected(context.player(), payload)));
+        ServerPlayNetworking.registerGlobalReceiver(ApplyPlayerHeadSkinPayload.ID, (payload, context) ->
+                context.server().execute(() -> handleApplyPlayerHead(context.player(), payload)));
         ServerPlayNetworking.registerGlobalReceiver(ClearSkinPayload.ID, (payload, context) ->
                 context.server().execute(() -> clear(context.player(), payload.pos(), true)));
         ServerPlayNetworking.registerGlobalReceiver(RequestInitialSyncPayload.ID, (payload, context) ->
@@ -75,6 +80,26 @@ public final class ModNetworking {
         ServerSkinStorage.get(world).put(data);
         syncSkin(world, data);
         player.sendMessage(Text.translatable("message.blockreskinner.applied", visual.getBlock().getName()), true);
+    }
+
+    private static void handleApplyPlayerHead(ServerPlayerEntity player, ApplyPlayerHeadSkinPayload payload) {
+        ServerWorld world = player.getEntityWorld();
+        String name = payload.playerName() == null ? "" : payload.playerName().trim();
+        if (!SkinValidation.canApplyPlayerHead(player, world, payload.pos(), name, payload.rotation())) {
+            return;
+        }
+        BlockReskinnerMod.LOGGER.info(
+                "Server applying player head skin: dimension={} pos={} real={} player={} rotation={}",
+                world.getRegistryKey().getValue(),
+                payload.pos().toShortString(),
+                world.getBlockState(payload.pos()),
+                name,
+                payload.rotation()
+        );
+        PlayerHeadSkinData data = new PlayerHeadSkinData(payload.pos(), name, payload.rotation());
+        ServerSkinStorage.get(world).put(data);
+        syncSkin(world, data);
+        player.sendMessage(Text.translatable("message.blockreskinner.applied_player_head", name), true);
     }
 
     private static void handleApplyConnected(ServerPlayerEntity player, ApplyConnectedSkinPayload payload) {
@@ -166,6 +191,9 @@ public final class ModNetworking {
         }
         if (data instanceof ConnectedSkinData connected) {
             return SkinQueries.isAllowedConnectedVisual(real, connected.visualMaterialState());
+        }
+        if (data instanceof PlayerHeadSkinData playerHead) {
+            return !SkinQueries.isConnectedBlock(real) && SkinQueries.isValidPlayerName(playerHead.playerName());
         }
         return false;
     }

@@ -2,9 +2,11 @@ package com.skrra.blockreskinner.render.head;
 
 import com.skrra.blockreskinner.render.BlockRenderOverrideHooks;
 import com.skrra.blockreskinner.skin.ClientSkinCache;
+import com.skrra.blockreskinner.skin.PlayerHeadSkinData;
 import com.skrra.blockreskinner.skin.SimpleSkinData;
 import com.skrra.blockreskinner.skin.SkinData;
 import com.skrra.blockreskinner.skin.SkinQueries;
+import net.minecraft.block.Blocks;
 import net.minecraft.block.AbstractSkullBlock;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.SkullBlock;
@@ -51,15 +53,33 @@ public final class VisualHeadRenderer {
             return;
         }
         for (SkinData data : ClientSkinCache.all()) {
-            if (!(data instanceof SimpleSkinData simple)) {
+            Direction facing;
+            float yaw;
+            SkullBlockEntityModel model;
+            RenderLayer layer;
+            BlockState visual;
+
+            if (data instanceof SimpleSkinData simple && simple.visualState().getBlock() instanceof AbstractSkullBlock skull) {
+                visual = simple.visualState();
+                model = getModel(client, skull.getSkullType());
+                facing = wallFacing(visual);
+                yaw = yawDegrees(visual, facing);
+                layer = SkullBlockEntityRenderer.getCutoutRenderLayer(skull.getSkullType(), null);
+            } else if (data instanceof PlayerHeadSkinData playerHead) {
+                visual = Blocks.PLAYER_HEAD.getDefaultState();
+                model = getModel(client, SkullBlock.Type.PLAYER);
+                facing = null;
+                yaw = RotationPropertyHelper.toDegrees(playerHead.rotation());
+                // Vanilla resolves the profile + skin texture asynchronously;
+                // renders with the default player skin until resolved.
+                layer = PlayerHeadProfiles.renderLayer(playerHead.playerName());
+            } else {
                 continue;
             }
-            BlockState visual = simple.visualState();
-            if (!(visual.getBlock() instanceof AbstractSkullBlock skull)) {
-                continue;
-            }
+
             BlockPos pos = data.pos();
-            if (pos.getSquaredDistanceFromCenter(cameraPos.getX(), cameraPos.getY(), cameraPos.getZ()) > MAX_RENDER_DISTANCE_SQ) {
+            if (model == null
+                    || pos.getSquaredDistanceFromCenter(cameraPos.getX(), cameraPos.getY(), cameraPos.getZ()) > MAX_RENDER_DISTANCE_SQ) {
                 continue;
             }
             // Mirror the guards VisualStateResolver applies for chunk skins.
@@ -67,16 +87,8 @@ public final class VisualHeadRenderer {
             if (!SkinQueries.isSupportedTarget(real) || SkinQueries.isConnectedBlock(real)) {
                 continue;
             }
-            SkullBlockEntityModel model = getModel(client, skull.getSkullType());
-            if (model == null) {
-                continue;
-            }
 
-            Direction facing = wallFacing(visual);
-            float yaw = yawDegrees(visual, facing);
             int light = BlockRenderOverrideHooks.skinnedLightmapCoordinates(world, visual, pos);
-            RenderLayer layer = SkullBlockEntityRenderer.getCutoutRenderLayer(skull.getSkullType(), null);
-
             matrices.push();
             matrices.translate(pos.getX() - cameraPos.getX(), pos.getY() - cameraPos.getY(), pos.getZ() - cameraPos.getZ());
             SkullBlockEntityRenderer.render(facing, yaw, 0.0F, matrices, queue, light, model, layer, 0, null);

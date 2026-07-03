@@ -70,7 +70,10 @@ public class BlockReskinnerClient implements ClientModInitializer {
                 ClientPlayNetworking.send(new RequestInitialSyncPayload());
             }
         });
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> ClientSkinCache.clear());
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            ClientSkinCache.clear();
+            com.skrra.blockreskinner.render.head.PlayerHeadProfiles.clear();
+        });
     }
 
     private static void rerender(BlockPos pos) {

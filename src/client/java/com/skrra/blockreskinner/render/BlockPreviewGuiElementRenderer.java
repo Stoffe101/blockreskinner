@@ -66,7 +66,7 @@ public class BlockPreviewGuiElementRenderer extends SpecialGuiElementRenderer<Bl
         matrices.scale(0.625F, 0.625F, 0.625F);
         matrices.translate(-0.5F, -0.5F, -0.5F);
         if (state.blockState().getBlock() instanceof AbstractSkullBlock) {
-            renderSkullPreview(client, state.blockState(), matrices);
+            renderSkullPreview(client, state.blockState(), state.playerName(), matrices);
         } else {
             renderBlockModel(client, state.blockState(), matrices);
         }
@@ -77,7 +77,7 @@ public class BlockPreviewGuiElementRenderer extends SpecialGuiElementRenderer<Bl
      * skull model renderer, submitted and flushed on the entity render
      * dispatcher's queue exactly like vanilla's entity GUI elements.
      */
-    private void renderSkullPreview(MinecraftClient client, BlockState blockState, MatrixStack matrices) {
+    private void renderSkullPreview(MinecraftClient client, BlockState blockState, String playerName, MatrixStack matrices) {
         if (!(blockState.getBlock() instanceof AbstractSkullBlock skull)) {
             return;
         }
@@ -88,7 +88,9 @@ public class BlockPreviewGuiElementRenderer extends SpecialGuiElementRenderer<Bl
         client.gameRenderer.getDiffuseLighting().setShaderLights(DiffuseLighting.Type.ENTITY_IN_UI);
         Direction facing = VisualHeadRenderer.wallFacing(blockState);
         float yaw = VisualHeadRenderer.yawDegrees(blockState, facing);
-        RenderLayer layer = SkullBlockEntityRenderer.getCutoutRenderLayer(skull.getSkullType(), null);
+        RenderLayer layer = skull.getSkullType() == net.minecraft.block.SkullBlock.Type.PLAYER && playerName != null
+                ? com.skrra.blockreskinner.render.head.PlayerHeadProfiles.renderLayer(playerName)
+                : SkullBlockEntityRenderer.getCutoutRenderLayer(skull.getSkullType(), null);
         RenderDispatcher dispatcher = client.gameRenderer.getEntityRenderDispatcher();
         SkullBlockEntityRenderer.render(facing, yaw, 0.0F, matrices, dispatcher.getQueue(),
                 LightmapTextureManager.MAX_LIGHT_COORDINATE, model, layer, 0, null);

@@ -23,12 +23,20 @@ public final class SkinCodecs {
             buf.writeEnumConstant(connected.west());
         } else if (data instanceof SimpleSkinData simple) {
             buf.writeString(BlockStateUtil.toString(simple.visualState()));
+        } else if (data instanceof PlayerHeadSkinData playerHead) {
+            buf.writeString(playerHead.playerName());
+            buf.writeVarInt(playerHead.rotation());
         }
     }
 
     public static SkinData readSkin(RegistryByteBuf buf) {
         SkinType type = buf.readEnumConstant(SkinType.class);
         BlockPos pos = buf.readBlockPos();
+        if (type == SkinType.PLAYER_HEAD) {
+            String name = buf.readString(64);
+            int rotation = Math.floorMod(buf.readVarInt(), 16);
+            return new PlayerHeadSkinData(pos, name, rotation);
+        }
         BlockState state = BlockStateUtil.parse(buf.readString(256));
         if (state == null) {
             state = net.minecraft.block.Blocks.STONE.getDefaultState();

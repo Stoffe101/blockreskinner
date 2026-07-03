@@ -50,12 +50,21 @@ public final class ReskinLayout {
     }
 
     public static ReskinLayout forSimple(ReskinLayoutProfile profile) {
+        return forSimple(profile, false);
+    }
+
+    /**
+     * @param tallDetails taller details panel for editor-style selections
+     *                    (Skulls & Heads: larger before/after previews plus the
+     *                    player-head name/rotation controls)
+     */
+    public static ReskinLayout forSimple(ReskinLayoutProfile profile, boolean tallDetails) {
         Rect window = windowRect(profile);
         int pad = profile.padding();
         Rect search = searchRect(profile, window);
         Rect footer = footerRect(profile, window);
 
-        int selectedH = profile.selectedPanelHeight();
+        int selectedH = profile.selectedPanelHeight() + (tallDetails ? 34 : 0);
         Rect selected = new Rect(window.x() + pad, footer.y() - 8 - selectedH, window.w() - pad * 2, selectedH);
 
         int contentTop = search.bottom() + 8;

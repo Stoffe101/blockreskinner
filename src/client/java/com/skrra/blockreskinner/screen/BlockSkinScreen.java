@@ -1,19 +1,25 @@
 package com.skrra.blockreskinner.screen;
 
+import com.skrra.blockreskinner.networking.payload.ApplyPlayerHeadSkinPayload;
 import com.skrra.blockreskinner.networking.payload.ApplySimpleSkinPayload;
 import com.skrra.blockreskinner.networking.payload.ClearSkinPayload;
 import com.skrra.blockreskinner.render.BlockPreviewGuiElementRenderState;
+import com.skrra.blockreskinner.render.head.PlayerHeadProfiles;
 import com.skrra.blockreskinner.screen.layout.ReskinLayout;
 import com.skrra.blockreskinner.screen.layout.ReskinLayoutProfile;
 import com.skrra.blockreskinner.screen.widget.ModernButtonWidget;
 import com.skrra.blockreskinner.screen.widget.ModernUi;
 import com.skrra.blockreskinner.skin.ClientSkinCache;
+import com.skrra.blockreskinner.skin.PlayerHeadSkinData;
 import com.skrra.blockreskinner.skin.SimpleSkinData;
 import com.skrra.blockreskinner.skin.SkinCategory;
 import com.skrra.blockreskinner.skin.SkinQueries;
 import com.skrra.blockreskinner.util.BlockStateUtil;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.minecraft.block.AbstractSkullBlock;
 import net.minecraft.block.BlockState;
+import net.minecraft.block.Blocks;
+import net.minecraft.block.SkullBlock;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
@@ -25,6 +31,8 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.RotationPropertyHelper;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -60,6 +68,18 @@ public class BlockSkinScreen extends Screen {
     protected ModernButtonWidget clearButton;
     private BlockState hoveredState;
     private boolean hoveringSelectedId;
+    private boolean tallDetails;
+
+    // Player head editor state (Skulls & Heads -> Player Head entry).
+    private static final Direction[] HEAD_ROTATIONS = {Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST};
+    protected String playerName = "";
+    protected boolean playerNameFocused;
+    private int playerHeadRotationIndex;
+    private String initialPlayerName = "";
+    private int initialPlayerHeadRotation = -1;
+    private boolean currentIsPlayerHead;
+    private String resolveRequestedName;
+    private ModernButtonWidget rotationButton;
 
     public BlockSkinScreen(BlockPos pos) {
         this(pos, SkinQueries.simpleVisualStates(), Text.translatable("screen.blockreskinner.simple.title"));
@@ -73,6 +93,44 @@ public class BlockSkinScreen extends Screen {
         this.realState = currentRealState(pos);
         this.currentVisualState = currentSimpleVisual(pos);
         this.selected = findMatchingState(currentVisualState);
+        this.rotationButton = new ModernButtonWidget(0, 0, 110, 18, Text.empty(), ModernButtonWidget.Style.SECONDARY, () -> {
+            playerHeadRotationIndex = (playerHeadRotationIndex + 1) % HEAD_ROTATIONS.length;
+            updateApplyButton();
+        });
+        if (ClientSkinCache.get(pos) instanceof PlayerHeadSkinData playerHead) {
+            currentIsPlayerHead = true;
+            playerName = playerHead.playerName();
+            initialPlayerName = playerHead.playerName();
+            initialPlayerHeadRotation = playerHead.rotation();
+            for (int i = 0; i < HEAD_ROTATIONS.length; i++) {
+                if (RotationPropertyHelper.fromDirection(HEAD_ROTATIONS[i]) == playerHead.rotation()) {
+                    playerHeadRotationIndex = i;
+                }
+            }
+            currentVisualState = Blocks.PLAYER_HEAD.getDefaultState();
+            selected = findMatchingState(currentVisualState);
+            resolveRequestedName = playerHead.playerName().trim();
+        }
+    }
+
+    protected boolean isPlayerHeadSelected() {
+        return selected != null && selected.getBlock() == Blocks.PLAYER_HEAD;
+    }
+
+    protected int playerHeadRotationValue() {
+        return RotationPropertyHelper.fromDirection(HEAD_ROTATIONS[playerHeadRotationIndex]);
+    }
+
+    private Text playerHeadRotationLabel() {
+        return Text.translatable("screen.blockreskinner.rotation",
+                Text.translatable("screen.blockreskinner.facing." + HEAD_ROTATIONS[playerHeadRotationIndex].asString()));
+    }
+
+    /** Heads get a taller details panel: bigger previews plus the player-head editor. */
+    private boolean wantTallDetails() {
+        return activeCategory == FilterCategory.HEADS
+                || currentIsPlayerHead
+                || (selected != null && selected.getBlock() instanceof AbstractSkullBlock);
     }
 
     @Override
@@ -82,9 +140,11 @@ public class BlockSkinScreen extends Screen {
     }
 
     protected void ensureLayout() {
+        tallDetails = wantTallDetails();
         ReskinLayoutProfile profile = ReskinLayoutProfile.create(width, height);
-        if (!profile.key().equals(layoutKey)) {
-            layoutKey = profile.key();
+        String key = profile.key() + (tallDetails ? ":tall" : "");
+        if (!key.equals(layoutKey)) {
+            layoutKey = key;
             layout = buildLayout(profile);
             rebuildUi();
             clampScroll();
@@ -92,7 +152,7 @@ public class BlockSkinScreen extends Screen {
     }
 
     protected ReskinLayout buildLayout(ReskinLayoutProfile profile) {
-        return ReskinLayout.forSimple(profile);
+        return ReskinLayout.forSimple(profile, tallDetails);
     }
 
     protected void rebuildUi() {
@@ -119,6 +179,14 @@ public class BlockSkinScreen extends Screen {
     }
 
     protected void apply() {
+        if (isPlayerHeadSelected()) {
+            String name = playerName.trim();
+            if (SkinQueries.isValidPlayerName(name)) {
+                ClientPlayNetworking.send(new ApplyPlayerHeadSkinPayload(pos, name, playerHeadRotationValue()));
+                close();
+            }
+            return;
+        }
         if (selected != null) {
             ClientPlayNetworking.send(new ApplySimpleSkinPayload(pos, BlockStateUtil.toString(selected)));
             close();
@@ -155,7 +223,7 @@ public class BlockSkinScreen extends Screen {
         String aliases = switch (skinCategory) {
             case LEAVES -> "plants plant leaves leaf fern flower grass sapling mushroom roots";
             case CRYSTALS -> "crystal crystals amethyst cluster bud buds";
-            case HEADS -> "skull skulls head heads mob skeleton wither zombie creeper piglin dragon";
+            case HEADS -> "skull skulls head heads mob skeleton wither zombie creeper piglin dragon player";
             default -> "";
         };
         return id.toLowerCase(Locale.ROOT).contains(needle)
@@ -167,7 +235,15 @@ public class BlockSkinScreen extends Screen {
 
     protected void updateApplyButton() {
         if (applyButton != null) {
-            applyButton.setEnabled(selected != null && !statesEqual(selected, currentVisualState));
+            if (isPlayerHeadSelected()) {
+                String name = playerName.trim();
+                boolean changed = !currentIsPlayerHead
+                        || !name.equalsIgnoreCase(initialPlayerName.trim())
+                        || playerHeadRotationValue() != initialPlayerHeadRotation;
+                applyButton.setEnabled(SkinQueries.isValidPlayerName(name) && changed);
+            } else {
+                applyButton.setEnabled(selected != null && !statesEqual(selected, currentVisualState));
+            }
         }
         if (clearButton != null) {
             clearButton.setEnabled(currentVisualState != null);
@@ -315,7 +391,19 @@ public class BlockSkinScreen extends Screen {
         SkinQueries.TextKey variantLabel = SkinQueries.variantLabelKey(state);
         String label;
         int color;
-        if (variantLabel != null) {
+        if (SkinQueries.category(state) == SkinCategory.HEADS) {
+            // Heads: the card names the head type; direction shows as a small
+            // corner chip (full detail lives in the tooltip + details panel).
+            label = state.getBlock().getName().getString();
+            color = selectedState ? ModernUi.TEXT_PRIMARY : ModernUi.TEXT_MUTED;
+            if (variantLabel != null) {
+                String direction = Text.translatable(variantLabel.labelKey()).getString();
+                if (!direction.isEmpty()) {
+                    context.drawTextWithShadow(textRenderer, Text.literal(direction.substring(0, 1)),
+                            x + size - 9, y + 4, ModernUi.WARNING);
+                }
+            }
+        } else if (variantLabel != null) {
             label = Text.translatable(variantLabel.labelKey()).getString();
             color = ModernUi.WARNING;
         } else {
@@ -333,12 +421,41 @@ public class BlockSkinScreen extends Screen {
      * the stack is already stored transformed, i.e. in real coordinates.
      */
     protected void drawBlockPreview(DrawContext context, BlockState state, int x, int y, int size) {
+        drawBlockPreview(context, state, null, x, y, size);
+    }
+
+    protected void drawBlockPreview(DrawContext context, BlockState state, String previewPlayerName, int x, int y, int size) {
         double renderScale = layout.profile.renderScale;
         int rx = (int) Math.round(x * renderScale);
         int ry = (int) Math.round(y * renderScale);
         int rsize = (int) Math.round(size * renderScale);
         context.state.addSpecialElement(new BlockPreviewGuiElementRenderState(
-                state, rx, ry, rx + rsize, ry + rsize, rsize, context.scissorStack.peekLast()));
+                state, previewPlayerName, rx, ry, rx + rsize, ry + rsize, rsize, context.scissorStack.peekLast()));
+    }
+
+    protected int detailsPreviewCardW(ReskinLayout.Rect panel) {
+        return tallDetails
+                ? Math.min(84, Math.max(54, (panel.w() - 40) / 6))
+                : Math.min(54, Math.max(44, (panel.w() - 40) / 7));
+    }
+
+    /** Right editor column X, mirrored by playerNameFieldRect and the renderer. */
+    private int detailsRightColumnX(ReskinLayout.Rect panel) {
+        int textX = panel.x() + 10;
+        int cardW = detailsPreviewCardW(panel);
+        int beforeX = panel.right() - cardW - 8 - cardW - 6;
+        int textW = beforeX - textX - 10;
+        int leftW = Math.max(150, textW / 2 - 8);
+        return textX + leftW + 12;
+    }
+
+    protected ReskinLayout.Rect playerNameFieldRect() {
+        ReskinLayout.Rect panel = layout.selected;
+        int rightX = detailsRightColumnX(panel);
+        int cardW = detailsPreviewCardW(panel);
+        int beforeX = panel.right() - cardW - 8 - cardW - 6;
+        int w = Math.max(90, Math.min(150, beforeX - rightX - 10));
+        return new ReskinLayout.Rect(rightX, panel.y() + 20, w, 18);
     }
 
     protected void renderDetailsPanel(DrawContext context, int mouseX, int mouseY) {
@@ -349,7 +466,7 @@ public class BlockSkinScreen extends Screen {
         ModernUi.panel(context, panel.x(), panel.y(), panel.w(), panel.h());
         int textX = panel.x() + 10;
         int y = panel.y() + 6;
-        int previewCardW = Math.min(54, Math.max(44, (panel.w() - 40) / 7));
+        int previewCardW = detailsPreviewCardW(panel);
         int previewCardH = panel.h() - 12;
         int afterPreviewX = panel.right() - previewCardW - 8;
         int beforePreviewX = afterPreviewX - previewCardW - 6;
@@ -361,17 +478,37 @@ public class BlockSkinScreen extends Screen {
         // Before = how the block looks right now (current skin if applied, else the real block);
         // After = the pending selection, or a "-" placeholder while nothing is picked.
         BlockState beforeState = currentVisualState != null ? currentVisualState : realState;
-        renderPreviewCard(context, Text.translatable("screen.blockreskinner.preview.before"), beforeState,
+        String beforePlayer = currentIsPlayerHead ? initialPlayerName : null;
+        BlockState afterState = selected;
+        String afterPlayer = null;
+        if (isPlayerHeadSelected()) {
+            afterState = selected.contains(SkullBlock.ROTATION)
+                    ? selected.with(SkullBlock.ROTATION, playerHeadRotationValue())
+                    : selected;
+            afterPlayer = SkinQueries.isValidPlayerName(playerName.trim()) ? playerName.trim() : null;
+        }
+        renderPreviewCard(context, Text.translatable("screen.blockreskinner.preview.before"), beforeState, beforePlayer,
                 beforePreviewX, panel.y() + 6, previewCardW, previewCardH);
-        renderPreviewCard(context, Text.translatable("screen.blockreskinner.preview.after"), selected,
+        renderPreviewCard(context, Text.translatable("screen.blockreskinner.preview.after"), afterState, afterPlayer,
                 afterPreviewX, panel.y() + 6, previewCardW, previewCardH);
 
         context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.editing"), textX, y, ModernUi.TEXT_MUTED);
         drawStateLine(context, Text.translatable("screen.blockreskinner.real_block"), realState, textX, y + 12, leftW, ModernUi.TEXT_PRIMARY);
         drawIdLine(context, realState, textX, y + 24, leftW);
-        drawStateLine(context, Text.translatable("screen.blockreskinner.current_visual_skin"), currentVisualState, textX, y + 38, leftW, ModernUi.TEXT_MUTED);
+        if (currentIsPlayerHead) {
+            String current = Text.translatable("screen.blockreskinner.current_visual_skin").getString()
+                    + ": " + Blocks.PLAYER_HEAD.getName().getString() + " (" + initialPlayerName + ")";
+            context.drawTextWithShadow(textRenderer, Text.literal(ModernUi.trim(textRenderer, current, leftW)),
+                    textX, y + 38, ModernUi.TEXT_MUTED);
+        } else {
+            drawStateLine(context, Text.translatable("screen.blockreskinner.current_visual_skin"), currentVisualState, textX, y + 38, leftW, ModernUi.TEXT_MUTED);
+        }
 
         context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.new_visual_skin"), rightX, y, ModernUi.TEXT_MUTED);
+        if (isPlayerHeadSelected()) {
+            renderPlayerHeadEditor(context, panel, rightX, mouseX, mouseY);
+            return;
+        }
         if (selected == null) {
             context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.no_new_skin_selected"),
                     rightX, y + 13, ModernUi.TEXT_DISABLED);
@@ -404,16 +541,63 @@ public class BlockSkinScreen extends Screen {
     }
 
     protected void renderPreviewCard(DrawContext context, Text label, BlockState state, int x, int y, int w, int h) {
+        renderPreviewCard(context, label, state, null, x, y, w, h);
+    }
+
+    protected void renderPreviewCard(DrawContext context, Text label, BlockState state, String previewPlayerName, int x, int y, int w, int h) {
         context.fill(x, y, x + w, y + h, ModernUi.withAlpha(ModernUi.CARD_BACKGROUND, 0xAA));
         ModernUi.border(context, x, y, w, h, ModernUi.BORDER_SOFT);
         context.drawCenteredTextWithShadow(textRenderer,
                 Text.literal(ModernUi.trim(textRenderer, label.getString(), w - 6)), x + w / 2, y + 4, ModernUi.TEXT_MUTED);
         if (state != null) {
             int preview = Math.min(w - 10, h - 18);
-            drawBlockPreview(context, state, x + (w - preview) / 2, y + h - preview - 5, preview);
+            drawBlockPreview(context, state, previewPlayerName, x + (w - preview) / 2, y + h - preview - 5, preview);
         } else {
             context.drawCenteredTextWithShadow(textRenderer, Text.literal("-"), x + w / 2, y + h / 2 + 3, ModernUi.TEXT_DISABLED);
         }
+    }
+
+    private void renderPlayerHeadEditor(DrawContext context, ReskinLayout.Rect panel, int rightX, int mouseX, int mouseY) {
+        ReskinLayout.Rect field = playerNameFieldRect();
+        ModernUi.searchBox(context, textRenderer, field.x(), field.y(), field.w(), field.h(),
+                playerName, Text.translatable("screen.blockreskinner.enter_player_name"), playerNameFocused);
+
+        Text status;
+        int statusColor;
+        String name = playerName.trim();
+        if (!SkinQueries.isValidPlayerName(name)) {
+            status = Text.translatable("screen.blockreskinner.head_status.enter_name");
+            statusColor = ModernUi.TEXT_DISABLED;
+        } else if (resolveRequestedName == null || !resolveRequestedName.equalsIgnoreCase(name)) {
+            status = Text.translatable("screen.blockreskinner.head_status.press_enter");
+            statusColor = ModernUi.TEXT_MUTED;
+        } else {
+            switch (PlayerHeadProfiles.status(name)) {
+                case RESOLVING -> {
+                    status = Text.translatable("screen.blockreskinner.head_status.resolving");
+                    statusColor = ModernUi.WARNING;
+                }
+                case RESOLVED -> {
+                    status = Text.translatable("screen.blockreskinner.head_status.resolved");
+                    statusColor = ModernUi.SUCCESS;
+                }
+                default -> {
+                    status = Text.translatable("screen.blockreskinner.head_status.failed");
+                    statusColor = 0xFFE07A8A;
+                }
+            }
+        }
+        int cardW = detailsPreviewCardW(panel);
+        int beforeX = panel.right() - cardW - 8 - cardW - 6;
+        int statusW = Math.max(60, beforeX - rightX - 10);
+        context.drawTextWithShadow(textRenderer,
+                Text.literal(ModernUi.trim(textRenderer, status.getString(), statusW)),
+                rightX, field.bottom() + 5, statusColor);
+
+        rotationButton.setPosition(rightX, field.bottom() + 17);
+        rotationButton.setSize(Math.min(130, field.w()), 18);
+        rotationButton.setLabel(playerHeadRotationLabel());
+        rotationButton.render(context, textRenderer, mouseX, mouseY);
     }
 
     protected void renderFooter(DrawContext context, int mouseX, int mouseY) {
@@ -463,6 +647,26 @@ public class BlockSkinScreen extends Screen {
         }
         if (handleExtraClick(vx, vy)) {
             return true;
+        }
+        if (isPlayerHeadSelected() && layout.selected != null) {
+            if (rotationButton.mouseClicked(vx, vy)) {
+                return true;
+            }
+            ReskinLayout.Rect field = playerNameFieldRect();
+            if (field.contains(vx, vy)) {
+                if (ModernUi.overSearchClear(vx, vy, field.x(), field.y(), field.w(), field.h(), playerName)) {
+                    playerName = "";
+                    resolveRequestedName = null;
+                    updateApplyButton();
+                }
+                playerNameFocused = true;
+                searchFocused = false;
+                return true;
+            }
+        }
+        if (playerNameFocused) {
+            playerNameFocused = false;
+            requestPlayerNameResolve();
         }
         ReskinLayout.Rect search = layout.search;
         if (search.contains(vx, vy)) {
@@ -615,8 +819,34 @@ public class BlockSkinScreen extends Screen {
         return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
     }
 
+    /** Kick off (memoized, async) profile resolution for the typed name. */
+    protected void requestPlayerNameResolve() {
+        String name = playerName.trim();
+        if (SkinQueries.isValidPlayerName(name)) {
+            resolveRequestedName = name;
+        }
+    }
+
     @Override
     public boolean keyPressed(KeyInput input) {
+        if (playerNameFocused) {
+            if (input.key() == GLFW.GLFW_KEY_ESCAPE) {
+                playerNameFocused = false;
+                requestPlayerNameResolve();
+                return true;
+            }
+            if (input.key() == GLFW.GLFW_KEY_ENTER || input.key() == GLFW.GLFW_KEY_KP_ENTER) {
+                requestPlayerNameResolve();
+                return true;
+            }
+            if (input.key() == GLFW.GLFW_KEY_BACKSPACE) {
+                if (!playerName.isEmpty()) {
+                    playerName = playerName.substring(0, playerName.length() - 1);
+                    updateApplyButton();
+                }
+                return true;
+            }
+        }
         if (searchFocused) {
             if (input.key() == GLFW.GLFW_KEY_ESCAPE) {
                 searchFocused = false;
@@ -635,6 +865,15 @@ public class BlockSkinScreen extends Screen {
 
     @Override
     public boolean charTyped(CharInput input) {
+        if (playerNameFocused && input.isValidChar() && playerName.length() < 16) {
+            String typed = input.asString();
+            char c = typed.isEmpty() ? ' ' : typed.charAt(0);
+            if (c == '_' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+                playerName += typed;
+                updateApplyButton();
+            }
+            return true;
+        }
         if (searchFocused && input.isValidChar() && searchQuery.length() < 48) {
             searchQuery += input.asString();
             refilter();

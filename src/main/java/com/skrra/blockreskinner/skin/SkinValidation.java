@@ -44,6 +44,19 @@ public final class SkinValidation {
         return true;
     }
 
+    public static boolean canApplyPlayerHead(ServerPlayerEntity player, ServerWorld world, BlockPos pos, String playerName, int rotation) {
+        if (!canEdit(player, world, pos)) {
+            return false;
+        }
+        if (SkinQueries.isConnectedBlock(world.getBlockState(pos))
+                || !SkinQueries.isValidPlayerName(playerName)
+                || rotation < 0 || rotation > 15) {
+            player.sendMessage(Text.translatable("message.blockreskinner.invalid_skin"), true);
+            return false;
+        }
+        return true;
+    }
+
     public static boolean canApplyConnected(ServerPlayerEntity player, ServerWorld world, BlockPos pos, BlockState visual) {
         if (!canEdit(player, world, pos)) {
             return false;
