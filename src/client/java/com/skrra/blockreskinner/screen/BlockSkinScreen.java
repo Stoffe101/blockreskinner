@@ -7,11 +7,14 @@ import com.skrra.blockreskinner.screen.layout.ReskinLayout;
 import com.skrra.blockreskinner.screen.layout.ReskinLayoutProfile;
 import com.skrra.blockreskinner.screen.widget.ModernButtonWidget;
 import com.skrra.blockreskinner.screen.widget.ModernUi;
+import com.skrra.blockreskinner.skin.ClientSkinCache;
+import com.skrra.blockreskinner.skin.SimpleSkinData;
 import com.skrra.blockreskinner.skin.SkinCategory;
 import com.skrra.blockreskinner.skin.SkinQueries;
 import com.skrra.blockreskinner.util.BlockStateUtil;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.block.BlockState;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -38,6 +41,8 @@ public class BlockSkinScreen extends Screen {
     protected final BlockPos pos;
     protected final List<BlockState> allStates;
     protected final List<BlockState> filteredStates = new ArrayList<>();
+    protected final BlockState realState;
+    protected BlockState currentVisualState;
     protected BlockState selected;
     protected int scrollRows;
     protected int categoryScroll;
@@ -52,6 +57,7 @@ public class BlockSkinScreen extends Screen {
     private String layoutKey = "";
     protected final List<ModernButtonWidget> footerButtons = new ArrayList<>();
     protected ModernButtonWidget applyButton;
+    protected ModernButtonWidget clearButton;
     private BlockState hoveredState;
     private boolean hoveringSelectedId;
 
@@ -64,7 +70,9 @@ public class BlockSkinScreen extends Screen {
         this.pos = pos;
         this.allStates = allStates;
         this.filteredStates.addAll(allStates);
-        this.selected = allStates.isEmpty() ? null : allStates.get(0);
+        this.realState = currentRealState(pos);
+        this.currentVisualState = currentSimpleVisual(pos);
+        this.selected = findMatchingState(currentVisualState);
     }
 
     @Override
@@ -97,8 +105,9 @@ public class BlockSkinScreen extends Screen {
         applyButton = new ModernButtonWidget(layout.window.x() + pad, buttonY, buttonW, buttonH,
                 Text.translatable("screen.blockreskinner.apply"), ModernButtonWidget.Style.PRIMARY, this::apply);
         footerButtons.add(applyButton);
-        footerButtons.add(new ModernButtonWidget(layout.window.x() + pad + buttonW + 8, buttonY, buttonW, buttonH,
-                Text.translatable("screen.blockreskinner.clear"), ModernButtonWidget.Style.SECONDARY, this::clear));
+        clearButton = new ModernButtonWidget(layout.window.x() + pad + buttonW + 8, buttonY, buttonW, buttonH,
+                Text.translatable("screen.blockreskinner.clear"), ModernButtonWidget.Style.SECONDARY, this::clear);
+        footerButtons.add(clearButton);
         footerButtons.add(new ModernButtonWidget(layout.window.right() - pad - buttonW, buttonY, buttonW, buttonH,
                 Text.translatable("gui.cancel"), ModernButtonWidget.Style.NEUTRAL, this::close));
         updateApplyButton();
@@ -130,9 +139,6 @@ public class BlockSkinScreen extends Screen {
             }
         }
         scrollRows = 0;
-        if (!filteredStates.contains(selected)) {
-            selected = filteredStates.isEmpty() ? null : filteredStates.get(0);
-        }
         updateApplyButton();
     }
 
@@ -141,18 +147,29 @@ public class BlockSkinScreen extends Screen {
             return true;
         }
         String id = Registries.BLOCK.getId(state.getBlock()).toString();
-        String category = Text.translatable(SkinQueries.category(state).translationKey()).getString();
-        SkinQueries.TextKey axisLabel = SkinQueries.axisLabelKey(state);
-        String axis = axisLabel == null ? "" : Text.translatable(axisLabel.labelKey()).getString() + " " + axisLabel.debugText();
+        SkinCategory skinCategory = SkinQueries.category(state);
+        String category = Text.translatable(skinCategory.translationKey()).getString();
+        SkinQueries.TextKey variantLabel = SkinQueries.variantLabelKey(state);
+        String variant = variantLabel == null ? "" : Text.translatable(variantLabel.labelKey()).getString() + " " + variantLabel.debugText();
+        // Extra alias terms so e.g. "fern", "plant" or "crystal" match the category.
+        String aliases = switch (skinCategory) {
+            case LEAVES -> "plants plant leaves leaf fern flower grass sapling mushroom roots";
+            case CRYSTALS -> "crystal crystals amethyst cluster bud buds";
+            default -> "";
+        };
         return id.toLowerCase(Locale.ROOT).contains(needle)
                 || state.getBlock().getName().getString().toLowerCase(Locale.ROOT).contains(needle)
                 || category.toLowerCase(Locale.ROOT).contains(needle)
-                || axis.toLowerCase(Locale.ROOT).contains(needle);
+                || variant.toLowerCase(Locale.ROOT).contains(needle)
+                || aliases.contains(needle);
     }
 
     protected void updateApplyButton() {
         if (applyButton != null) {
-            applyButton.setEnabled(selected != null);
+            applyButton.setEnabled(selected != null && !statesEqual(selected, currentVisualState));
+        }
+        if (clearButton != null) {
+            clearButton.setEnabled(currentVisualState != null);
         }
     }
 
@@ -275,7 +292,7 @@ public class BlockSkinScreen extends Screen {
             if (hovered) {
                 hoveredState = state;
             }
-            renderCard(context, state, x, y, size, hovered, state == selected);
+            renderCard(context, state, x, y, size, hovered, statesEqual(state, selected));
         }
         context.disableScissor();
 
@@ -294,11 +311,11 @@ public class BlockSkinScreen extends Screen {
         int preview = size - 20;
         drawBlockPreview(context, state, x + (size - preview) / 2, y + 3, preview);
 
-        SkinQueries.TextKey axisLabel = SkinQueries.axisLabelKey(state);
+        SkinQueries.TextKey variantLabel = SkinQueries.variantLabelKey(state);
         String label;
         int color;
-        if (axisLabel != null) {
-            label = Text.translatable(axisLabel.labelKey()).getString();
+        if (variantLabel != null) {
+            label = Text.translatable(variantLabel.labelKey()).getString();
             color = ModernUi.WARNING;
         } else {
             label = state.getBlock().getName().getString();
@@ -331,38 +348,70 @@ public class BlockSkinScreen extends Screen {
         ModernUi.panel(context, panel.x(), panel.y(), panel.w(), panel.h());
         int textX = panel.x() + 10;
         int y = panel.y() + 6;
-        context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.selected"), textX, y, ModernUi.TEXT_MUTED);
+        int previewCardW = Math.min(54, Math.max(44, (panel.w() - 40) / 7));
+        int previewCardH = panel.h() - 12;
+        int afterPreviewX = panel.right() - previewCardW - 8;
+        int beforePreviewX = afterPreviewX - previewCardW - 6;
+        int textW = beforePreviewX - textX - 10;
+        int leftW = Math.max(150, textW / 2 - 8);
+        int rightX = textX + leftW + 12;
+        int rightW = Math.max(80, beforePreviewX - rightX - 10);
+
+        // Before = how the block looks right now (current skin if applied, else the real block);
+        // After = the pending selection, or a "-" placeholder while nothing is picked.
+        BlockState beforeState = currentVisualState != null ? currentVisualState : realState;
+        renderPreviewCard(context, Text.translatable("screen.blockreskinner.preview.before"), beforeState,
+                beforePreviewX, panel.y() + 6, previewCardW, previewCardH);
+        renderPreviewCard(context, Text.translatable("screen.blockreskinner.preview.after"), selected,
+                afterPreviewX, panel.y() + 6, previewCardW, previewCardH);
+
+        context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.editing"), textX, y, ModernUi.TEXT_MUTED);
+        drawStateLine(context, Text.translatable("screen.blockreskinner.real_block"), realState, textX, y + 12, leftW, ModernUi.TEXT_PRIMARY);
+        drawIdLine(context, realState, textX, y + 24, leftW);
+        drawStateLine(context, Text.translatable("screen.blockreskinner.current_visual_skin"), currentVisualState, textX, y + 38, leftW, ModernUi.TEXT_MUTED);
+
+        context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.new_visual_skin"), rightX, y, ModernUi.TEXT_MUTED);
         if (selected == null) {
-            context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.no_selection"), textX, y + 13, ModernUi.TEXT_DISABLED);
+            context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.no_new_skin_selected"),
+                    rightX, y + 13, ModernUi.TEXT_DISABLED);
+            context.drawTextWithShadow(textRenderer, Text.translatable("screen.blockreskinner.choose_skin_from_grid"),
+                    rightX, y + 26, ModernUi.TEXT_MUTED);
             return;
         }
 
-        int previewSize = Math.min(56, panel.h() - 14);
-        int previewX = panel.right() - previewSize - 8;
-        drawBlockPreview(context, selected, previewX, panel.y() + (panel.h() - previewSize) / 2, previewSize);
-        int textW = previewX - textX - 10;
-
-        String name = ModernUi.trim(textRenderer, selected.getBlock().getName().getString(), textW);
-        context.drawTextWithShadow(textRenderer, Text.literal(name), textX, y + 12, ModernUi.TEXT_PRIMARY);
-
-        SkinQueries.TextKey axisLabel = SkinQueries.axisLabelKey(selected);
-        if (axisLabel != null) {
-            String variant = Text.translatable(axisLabel.labelKey()).getString() + " (" + axisLabel.debugText() + ")";
+        String name = ModernUi.trim(textRenderer, selected.getBlock().getName().getString(), rightW);
+        context.drawTextWithShadow(textRenderer, Text.literal(name), rightX, y + 12, ModernUi.TEXT_PRIMARY);
+        SkinQueries.TextKey variantLabel = SkinQueries.variantLabelKey(selected);
+        if (variantLabel != null) {
+            String variant = Text.translatable(variantLabel.labelKey()).getString() + " (" + variantLabel.debugText() + ")";
             context.drawTextWithShadow(textRenderer,
                     Text.translatable("screen.blockreskinner.selected_variant", Text.literal(variant)),
-                    textX, y + 24, ModernUi.WARNING);
+                    rightX, y + 24, ModernUi.WARNING);
         } else {
             Text category = Text.translatable(SkinQueries.category(selected).translationKey());
             context.drawTextWithShadow(textRenderer,
                     Text.translatable("screen.blockreskinner.selected_category", category),
-                    textX, y + 24, ModernUi.TEXT_MUTED);
+                    rightX, y + 24, ModernUi.TEXT_MUTED);
         }
 
         String fullId = BlockStateUtil.toString(selected);
-        String shownId = ModernUi.trim(textRenderer, fullId, textW);
-        context.drawTextWithShadow(textRenderer, Text.literal(shownId), textX, y + 36, ModernUi.TEXT_DISABLED);
-        if (!shownId.equals(fullId) && ModernUi.hovered(mouseX, mouseY, textX, y + 34, textW, 12)) {
+        String shownId = ModernUi.trim(textRenderer, fullId, rightW);
+        context.drawTextWithShadow(textRenderer, Text.literal(shownId), rightX, y + 36, ModernUi.TEXT_DISABLED);
+        if (!shownId.equals(fullId) && ModernUi.hovered(mouseX, mouseY, rightX, y + 34, rightW, 12)) {
             hoveringSelectedId = true;
+        }
+    }
+
+    protected void renderPreviewCard(DrawContext context, Text label, BlockState state, int x, int y, int w, int h) {
+        context.fill(x, y, x + w, y + h, ModernUi.withAlpha(ModernUi.CARD_BACKGROUND, 0xAA));
+        ModernUi.border(context, x, y, w, h, ModernUi.BORDER_SOFT);
+        context.drawCenteredTextWithShadow(textRenderer,
+                Text.literal(ModernUi.trim(textRenderer, label.getString(), w - 6)), x + w / 2, y + 4, ModernUi.TEXT_MUTED);
+        if (state != null) {
+            int preview = Math.min(w - 10, h - 18);
+            drawBlockPreview(context, state, x + (w - preview) / 2, y + h - preview - 5, preview);
+        } else {
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("-"), x + w / 2, y + h / 2 + 3, ModernUi.TEXT_DISABLED);
         }
     }
 
@@ -380,10 +429,10 @@ public class BlockSkinScreen extends Screen {
             List<Text> lines = new ArrayList<>();
             lines.add(hoveredState.getBlock().getName());
             lines.add(Text.literal(Registries.BLOCK.getId(hoveredState.getBlock()).toString()).formatted(Formatting.GRAY));
-            SkinQueries.TextKey axisLabel = SkinQueries.axisLabelKey(hoveredState);
-            if (axisLabel != null) {
-                lines.add(Text.translatable("screen.blockreskinner.tooltip.variant", Text.translatable(axisLabel.labelKey())).formatted(Formatting.YELLOW));
-                lines.add(Text.literal(axisLabel.debugText()).formatted(Formatting.GRAY));
+            SkinQueries.TextKey variantLabel = SkinQueries.variantLabelKey(hoveredState);
+            if (variantLabel != null) {
+                lines.add(Text.translatable("screen.blockreskinner.tooltip.variant", Text.translatable(variantLabel.labelKey())).formatted(Formatting.YELLOW));
+                lines.add(Text.literal(variantLabel.debugText()).formatted(Formatting.GRAY));
             }
             lines.add(Text.translatable(SkinQueries.category(hoveredState).translationKey()).formatted(Formatting.DARK_AQUA));
             ModernUi.tooltip(context, textRenderer, lines, mouseX, mouseY, layout.profile.virtualWidth, layout.profile.virtualHeight);
@@ -438,6 +487,48 @@ public class BlockSkinScreen extends Screen {
             return true;
         }
         return layout.window.contains(vx, vy);
+    }
+
+    protected static BlockState currentRealState(BlockPos pos) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        return client.world == null ? null : client.world.getBlockState(pos);
+    }
+
+    protected BlockState currentSimpleVisual(BlockPos pos) {
+        if (ClientSkinCache.get(pos) instanceof SimpleSkinData simple) {
+            return simple.visualState();
+        }
+        return null;
+    }
+
+    protected BlockState findMatchingState(BlockState state) {
+        if (state == null) {
+            return null;
+        }
+        for (BlockState candidate : allStates) {
+            if (statesEqual(candidate, state)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    protected boolean statesEqual(BlockState left, BlockState right) {
+        return left == right || (left != null && left.equals(right));
+    }
+
+    protected void drawStateLine(DrawContext context, Text label, BlockState state, int x, int y, int width, int valueColor) {
+        String value = state == null ? Text.translatable("screen.blockreskinner.none").getString() : state.getBlock().getName().getString();
+        String line = label.getString() + ": " + value;
+        context.drawTextWithShadow(textRenderer, Text.literal(ModernUi.trim(textRenderer, line, width)), x, y, valueColor);
+    }
+
+    protected void drawIdLine(DrawContext context, BlockState state, int x, int y, int width) {
+        if (state == null) {
+            return;
+        }
+        String id = BlockStateUtil.toString(state);
+        context.drawTextWithShadow(textRenderer, Text.literal(ModernUi.trim(textRenderer, id, width)), x, y, ModernUi.TEXT_DISABLED);
     }
 
     /** Subclass hook for additional virtual-coordinate click targets. */
@@ -562,6 +653,7 @@ public class BlockSkinScreen extends Screen {
         LOGS_AND_PILLARS("screen.blockreskinner.category.logs_and_pillars"),
         TRANSPARENT("screen.blockreskinner.category.transparent"),
         LEAVES("screen.blockreskinner.category.leaves"),
+        CRYSTALS("screen.blockreskinner.category.crystals"),
         ORES("screen.blockreskinner.category.ores"),
         STONE_BRICKS("screen.blockreskinner.category.stone_bricks"),
         WOOD("screen.blockreskinner.category.wood"),
@@ -589,6 +681,7 @@ public class BlockSkinScreen extends Screen {
                 case LOGS_AND_PILLARS -> category == SkinCategory.LOGS_AND_PILLARS;
                 case TRANSPARENT -> category == SkinCategory.TRANSPARENT;
                 case LEAVES -> category == SkinCategory.LEAVES;
+                case CRYSTALS -> category == SkinCategory.CRYSTALS;
                 case ORES -> path.endsWith("_ore") || path.equals("ancient_debris")
                         || (path.startsWith("raw_") && path.endsWith("_block"));
                 case STONE_BRICKS -> !path.endsWith("_ore")

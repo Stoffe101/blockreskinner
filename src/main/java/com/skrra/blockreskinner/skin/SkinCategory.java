@@ -4,6 +4,7 @@ public enum SkinCategory {
     FULL_BLOCKS("screen.blockreskinner.category.full_blocks"),
     LOGS_AND_PILLARS("screen.blockreskinner.category.logs_and_pillars"),
     LEAVES("screen.blockreskinner.category.leaves"),
+    CRYSTALS("screen.blockreskinner.category.crystals"),
     TRANSPARENT("screen.blockreskinner.category.transparent"),
     CUTOUT("screen.blockreskinner.category.cutout"),
     CONNECTED_FENCES("screen.blockreskinner.category.connected_fences"),

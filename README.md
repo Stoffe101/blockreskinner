@@ -36,7 +36,13 @@ Use it like this:
 
 ## Skin Modes
 
-Normal full-block mode is used for ordinary cube-like blocks. The selector includes safe full cube model blocks, glass-like full cubes, and log/pillar axis variants. Thin, tiny, multipart, block-entity, fluid, redstone, plant, door, trapdoor, fence, wall, pane, bar, and chain-like models are excluded from normal mode.
+Normal full-block mode is used for ordinary cube-like blocks. The Full Blocks selection stays strict: it only includes safe full cube model blocks. Thin, tiny, multipart, block-entity, fluid, redstone, door, trapdoor, fence, wall, pane, bar, and chain-like models are excluded from Full Blocks.
+
+On top of that, a few decorative categories expose safe non-cube visuals:
+
+- **Plants & Leaves** — all leaf blocks plus safe single-block plants (fern, dead bush, short grass, flowers, mushrooms, fungi, saplings, roots and similar cross-model plants). Tall two-block plants such as large fern and tall grass are intentionally unsupported for now: they would need two-block visual skin support, and showing only one half would look broken.
+- **Crystals & Buds** — amethyst cluster and the small/medium/large amethyst buds, each selectable in all six facings (Up, Down, North, East, South, West).
+- Skulls and mob heads are intentionally unsupported for now: they render through block entity renderers, which the visual-only chunk render substitution cannot drive. They may get a dedicated visual-only renderer later.
 
 Log and pillar entries are shown separately:
 

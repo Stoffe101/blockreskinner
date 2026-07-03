@@ -1,12 +1,18 @@
 package com.skrra.blockreskinner.render;
 
+import net.minecraft.block.BlockRenderType;
+import net.minecraft.block.BlockState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.render.SpecialGuiElementRenderer;
+import net.minecraft.client.render.BlockRenderLayers;
 import net.minecraft.client.render.DiffuseLighting;
 import net.minecraft.client.render.LightmapTextureManager;
 import net.minecraft.client.render.OverlayTexture;
 import net.minecraft.client.render.VertexConsumerProvider;
+import net.minecraft.client.render.block.BlockModelRenderer;
+import net.minecraft.client.render.model.BlockStateModel;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.world.biome.GrassColors;
 import org.joml.Quaternionf;
 
 /**
@@ -52,10 +58,35 @@ public class BlockPreviewGuiElementRenderer extends SpecialGuiElementRenderer<Bl
         ));
         matrices.scale(0.625F, 0.625F, 0.625F);
         matrices.translate(-0.5F, -0.5F, -0.5F);
-        client.getBlockRenderManager().renderBlockAsEntity(
-                state.blockState(),
-                matrices,
-                this.vertexConsumers,
+        renderBlockModel(client, state.blockState(), matrices);
+    }
+
+    /**
+     * Standalone block model render (equivalent to renderBlockAsEntity) with a
+     * tint safety net: previews have no world context, and a color provider
+     * that returns black without one would render tinted models (plants,
+     * grass, leaves) as black silhouettes. Vanilla providers return sane
+     * plains-like defaults for a null world; the guard covers modded ones.
+     */
+    private void renderBlockModel(MinecraftClient client, BlockState blockState, MatrixStack matrices) {
+        if (blockState.getRenderType() != BlockRenderType.MODEL) {
+            return;
+        }
+        BlockStateModel model = client.getBlockRenderManager().getModel(blockState);
+        int color = client.getBlockColors().getColor(blockState, null, null, 0);
+        if ((color & 0xFFFFFF) == 0) {
+            color = GrassColors.getDefaultColor();
+        }
+        float red = (color >> 16 & 0xFF) / 255.0F;
+        float green = (color >> 8 & 0xFF) / 255.0F;
+        float blue = (color & 0xFF) / 255.0F;
+        BlockModelRenderer.render(
+                matrices.peek(),
+                this.vertexConsumers.getBuffer(BlockRenderLayers.getEntityBlockLayer(blockState)),
+                model,
+                red,
+                green,
+                blue,
                 LightmapTextureManager.MAX_LIGHT_COORDINATE,
                 OverlayTexture.DEFAULT_UV
         );
